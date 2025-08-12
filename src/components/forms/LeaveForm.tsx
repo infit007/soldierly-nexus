@@ -1,0 +1,156 @@
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Save } from "lucide-react";
+
+const leaveSchema = z.object({
+  annualEntitlement: z.coerce.number().min(0, "Required"),
+  annualTaken: z.coerce.number().min(0, "Required"),
+  sickTaken: z.coerce.number().min(0, "Required"),
+});
+
+type LeaveFormData = z.infer<typeof leaveSchema>;
+
+export function LeaveForm() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] =
+    useState<"idle" | "saving" | "saved">("idle");
+  const { toast } = useToast();
+
+  const form = useForm<LeaveFormData>({
+    resolver: zodResolver(leaveSchema),
+    defaultValues: {
+      annualEntitlement: 0,
+      annualTaken: 0,
+      sickTaken: 0,
+    },
+  });
+
+  useEffect(() => {
+    const sub = form.watch((vals) => {
+      if (vals.annualEntitlement !== 0 || vals.annualTaken !== 0 || vals.sickTaken !== 0) {
+        setAutoSaveStatus("saving");
+        const timer = setTimeout(() => {
+          localStorage.setItem("leaveDetails", JSON.stringify(vals));
+          setAutoSaveStatus("saved");
+          setTimeout(() => setAutoSaveStatus("idle"), 2000);
+        }, 1000);
+        return () => clearTimeout(timer);
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("leaveDetails");
+    if (saved) {
+      form.reset(JSON.parse(saved));
+    }
+  }, [form]);
+
+  const onSubmit = async (data: LeaveFormData) => {
+    setIsLoading(true);
+    try {
+      await new Promise((r) => setTimeout(r, 1000));
+      localStorage.setItem("leaveDetails", JSON.stringify(data));
+      toast({ title: "Success", description: "Leave details saved" });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to save leave details",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="shadow-soft">
+      <CardHeader>
+        <CardTitle>Leave Details</CardTitle>
+        <CardDescription>Track your leave balance</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <FormField
+              control={form.control}
+              name="annualEntitlement"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Annual Leave Entitlement</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="annualTaken"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Annual Leave Taken</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="sickTaken"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sick Leave Taken</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="flex justify-end">
+              <Button type="submit" disabled={isLoading} className="min-w-32">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Details
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
+  );
+}
+

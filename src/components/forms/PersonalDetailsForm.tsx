@@ -12,23 +12,44 @@ import { Loader2, Save, User } from "lucide-react";
 
 const personalDetailsSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
-  serviceNumber: z.string().min(5, "Service number is required"),
+  serviceNumber: z
+    .string()
+    .min(5, "Army number is required")
+    .regex(/^[A-Za-z0-9\-\/]+$/, "Army number may contain letters, numbers, - or /"),
   rank: z.string().min(1, "Rank is required"),
+  dateOfJoining: z.string().min(1, "Date of joining is required"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
-  phoneNumber: z.string().min(10, "Valid phone number is required"),
+  phoneNumber: z
+    .string()
+    .min(10, "Valid phone number is required")
+    .regex(/^[0-9+\-\s()]{10,}$/, "Valid phone number is required"),
   email: z.string().email("Valid email is required"),
   address: z.string().min(10, "Address must be at least 10 characters"),
   emergencyContactName: z.string().min(2, "Emergency contact name is required"),
-  emergencyContactPhone: z.string().min(10, "Emergency contact phone is required"),
+  emergencyContactPhone: z
+    .string()
+    .min(10, "Emergency contact phone is required")
+    .regex(/^[0-9+\-\s()]{10,}$/, "Valid emergency contact phone is required"),
   emergencyContactRelation: z.string().min(1, "Emergency contact relation is required"),
 });
 
 type PersonalDetailsFormData = z.infer<typeof personalDetailsSchema>;
 
 const ranks = [
-  "Private", "Lance Corporal", "Corporal", "Sergeant", "Staff Sergeant",
-  "Warrant Officer", "Second Lieutenant", "Lieutenant", "Captain",
-  "Major", "Lieutenant Colonel", "Colonel", "Brigadier", "Major General"
+  "Private",
+  "Lance Corporal",
+  "Corporal",
+  "Sergeant",
+  "Staff Sergeant",
+  "Warrant Officer",
+  "Second Lieutenant",
+  "Lieutenant",
+  "Captain",
+  "Major",
+  "Lieutenant Colonel",
+  "Colonel",
+  "Brigadier",
+  "Major General",
 ];
 
 export function PersonalDetailsForm() {
@@ -42,6 +63,7 @@ export function PersonalDetailsForm() {
       fullName: "",
       serviceNumber: "",
       rank: "",
+      dateOfJoining: "",
       dateOfBirth: "",
       phoneNumber: "",
       email: "",
@@ -55,10 +77,14 @@ export function PersonalDetailsForm() {
   // Auto-save functionality
   useEffect(() => {
     const subscription = form.watch((data) => {
-      if (Object.values(data).some(value => value !== "")) {
+      if (Object.values(data).some((value) => value !== "")) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("personalDetails", JSON.stringify(data));
+          try {
+            localStorage.setItem("personalDetails", JSON.stringify(data));
+          } catch {
+            // ignore storage errors
+          }
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -72,15 +98,19 @@ export function PersonalDetailsForm() {
   useEffect(() => {
     const savedData = localStorage.getItem("personalDetails");
     if (savedData) {
-      form.reset(JSON.parse(savedData));
+      try {
+        const parsed = JSON.parse(savedData);
+        form.reset(parsed);
+      } catch {
+        // corrupted storage; ignore
+      }
     }
   }, [form]);
 
   const onSubmit = async (data: PersonalDetailsFormData) => {
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       localStorage.setItem("personalDetails", JSON.stringify(data));
       toast({
         title: "Success",
@@ -118,14 +148,26 @@ export function PersonalDetailsForm() {
       <Card className="shadow-soft">
         <CardHeader className="bg-gradient-card rounded-t-lg">
           <CardTitle>Basic Information</CardTitle>
-          <CardDescription>
-            Enter your basic personal and contact information
-          </CardDescription>
+          <CardDescription>Enter your basic personal and contact information</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="serviceNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Army Number</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter army number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="fullName"
@@ -142,25 +184,11 @@ export function PersonalDetailsForm() {
 
                 <FormField
                   control={form.control}
-                  name="serviceNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Service Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter service number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="rank"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Rank</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select your rank" />
@@ -174,6 +202,20 @@ export function PersonalDetailsForm() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="dateOfJoining"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of Joining</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -239,9 +281,7 @@ export function PersonalDetailsForm() {
               <Card className="bg-accent/30">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-lg">Emergency Contact</CardTitle>
-                  <CardDescription>
-                    Provide details of someone to contact in case of emergency
-                  </CardDescription>
+                  <CardDescription>Provide details of someone to contact in case of emergency</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
