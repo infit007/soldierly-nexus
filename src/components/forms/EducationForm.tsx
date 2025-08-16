@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const yearSchema = z
   .string()
@@ -59,6 +61,7 @@ export function EducationForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<EducationFormData>({
     resolver: zodResolver(educationSchema),
@@ -87,7 +90,8 @@ export function EducationForm() {
       if (Object.values(data).some((val) => val !== "")) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("educationDetails", JSON.stringify(data));
+          const key = user ? `educationDetails:${user.id}` : "educationDetails";
+          localStorage.setItem(key, JSON.stringify(data));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -95,20 +99,32 @@ export function EducationForm() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("educationDetails");
-    if (saved) {
-      form.reset(JSON.parse(saved));
+    let cancelled = false;
+    async function load() {
+      try {
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.education) {
+          form.reset(profile.education);
+          return;
+        }
+      } catch {}
+      const key = user ? `educationDetails:${user.id}` : "educationDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) form.reset(JSON.parse(saved));
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: EducationFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("educationDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/education", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `educationDetails:${user.id}` : "educationDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({
         title: "Success",
         description: "Education details saved",

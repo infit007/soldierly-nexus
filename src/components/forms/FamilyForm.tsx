@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const familyMemberSchema = z.object({
   Name: z.string().optional(),
@@ -47,6 +49,7 @@ export function FamilyForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<FamilyFormData>({
     resolver: zodResolver(familySchema),
@@ -67,7 +70,8 @@ export function FamilyForm() {
       if (values.members && values.members.length > 0) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("familyDetails", JSON.stringify(values));
+          const key = user ? `familyDetails:${user.id}` : "familyDetails";
+          localStorage.setItem(key, JSON.stringify(values));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -75,20 +79,32 @@ export function FamilyForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("familyDetails");
-    if (saved) {
-      form.reset(JSON.parse(saved));
+    let cancelled = false;
+    async function load() {
+      try {
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.family) {
+          form.reset(profile.family);
+          return;
+        }
+      } catch {}
+      const key = user ? `familyDetails:${user.id}` : "familyDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) form.reset(JSON.parse(saved));
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: FamilyFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("familyDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/family", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `familyDetails:${user.id}` : "familyDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({ title: "Success", description: "Family details saved" });
     } catch {
       toast({

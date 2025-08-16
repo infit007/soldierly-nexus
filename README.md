@@ -71,3 +71,83 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Authentication (PostgreSQL, JWT)
+
+This project now includes a backend server providing authentication with PostgreSQL, bcrypt password hashing, and JWT in HttpOnly cookies.
+
+### Database schema
+
+SQL migration at `server/migrations/001_init.sql` creates the `users` table:
+
+- id: UUID primary key
+- username: unique text
+- email: unique text
+- password_hash: text (bcrypt)
+- role: 'user' | 'admin'
+- created_at: timestamp
+
+### Environment variables
+
+- Frontend: `.env` at repository root
+```
+VITE_API_URL=http://localhost:5000
+```
+- Server: `server/.env`
+```
+PORT=5000
+DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DBNAME
+JWT_SECRET=replace-with-a-long-random-secret
+NODE_ENV=development
+# Optional: CORS origin (defaults to http://localhost:8081)
+CORS_ORIGIN=http://localhost:8081
+```
+
+### Install and run
+
+1. Start PostgreSQL and create a database.
+2. Configure `server/.env` with your `DATABASE_URL` and `JWT_SECRET`.
+3. Run server migrations and start the server:
+```
+cd server
+npm install
+npm run migrate
+npm run dev
+```
+4. In a new terminal, run the frontend:
+```
+npm install
+npm run dev
+```
+The frontend will be at `http://localhost:8081` (or 8080) and the server at `http://localhost:5000`.
+
+### Create an admin user (direct DB)
+
+Admins should be added directly in the DB. Generate a bcrypt hash and insert:
+
+Generate hash in Node:
+```
+node -e "require('bcrypt').hash('YourAdminPassword', 10).then(h=>console.log(h))"
+```
+Then insert:
+```
+INSERT INTO users (username, email, password_hash, role)
+VALUES ('admin', 'admin@example.com', '<PASTE_BCRYPT_HASH>', 'admin');
+```
+
+### API endpoints
+
+- POST `/api/signup` { username, email, password } → create user, set cookie
+- POST `/api/login` { usernameOrEmail, password } → login, set cookie
+- POST `/api/logout` → clear cookie
+- GET `/api/me` → current user
+- GET `/api/admin/ping` → admin only
+- GET `/api/user/ping` → user only
+
+### Route protection
+
+- All existing app pages require authentication and user role (`user`).
+- Admin-only page at `/admin-dashboard`.
+- Login at `/login`, Signup at `/signup`, Logout at `/logout`.
+
+No MongoDB code remains; PostgreSQL is used via `pg`.

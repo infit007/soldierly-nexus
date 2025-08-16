@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const salarySchema = z.object({
   basicPay: z.coerce.number().min(0, "Enter valid amount"),
@@ -35,6 +37,7 @@ export function SalaryForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<SalaryFormData>({
     resolver: zodResolver(salarySchema),
@@ -52,7 +55,8 @@ export function SalaryForm() {
       if (anyFilled) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("salaryDetails", JSON.stringify(values));
+          const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
+          localStorage.setItem(key, JSON.stringify(values));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -60,20 +64,32 @@ export function SalaryForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("salaryDetails");
-    if (saved) {
-      form.reset(JSON.parse(saved));
+    let cancelled = false;
+    async function load() {
+      try {
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.salary) {
+          form.reset(profile.salary);
+          return;
+        }
+      } catch {}
+      const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) form.reset(JSON.parse(saved));
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: SalaryFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("salaryDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/salary", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({ title: "Success", description: "Salary details saved" });
     } catch {
       toast({

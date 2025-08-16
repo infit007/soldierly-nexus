@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const medicalSchema = z.object({
   bloodGroup: z.string().min(1, "Required"),
@@ -36,6 +38,7 @@ export function MedicalForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<MedicalFormData>({
     resolver: zodResolver(medicalSchema),
@@ -52,7 +55,8 @@ export function MedicalForm() {
       if (Object.values(values).some((v) => v !== "")) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("medicalDetails", JSON.stringify(values));
+          const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
+          localStorage.setItem(key, JSON.stringify(values));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -60,20 +64,32 @@ export function MedicalForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("medicalDetails");
-    if (saved) {
-      form.reset(JSON.parse(saved));
+    let cancelled = false;
+    async function load() {
+      try {
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.medical) {
+          form.reset(profile.medical);
+          return;
+        }
+      } catch {}
+      const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) form.reset(JSON.parse(saved));
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: MedicalFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("medicalDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/medical", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({ title: "Success", description: "Medical details saved" });
     } catch {
       toast({

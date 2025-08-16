@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const leaveSchema = z.object({
   annualEntitlement: z.coerce.number().min(0, "Required"),
@@ -35,6 +37,7 @@ export function LeaveForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<LeaveFormData>({
     resolver: zodResolver(leaveSchema),
@@ -50,7 +53,8 @@ export function LeaveForm() {
       if (vals.annualEntitlement !== 0 || vals.annualTaken !== 0 || vals.sickTaken !== 0) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
-          localStorage.setItem("leaveDetails", JSON.stringify(vals));
+          const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
+          localStorage.setItem(key, JSON.stringify(vals));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -58,20 +62,32 @@ export function LeaveForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("leaveDetails");
-    if (saved) {
-      form.reset(JSON.parse(saved));
+    let cancelled = false;
+    async function load() {
+      try {
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.leave) {
+          form.reset(profile.leave);
+          return;
+        }
+      } catch {}
+      const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) form.reset(JSON.parse(saved));
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: LeaveFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("leaveDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/leave", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({ title: "Success", description: "Leave details saved" });
     } catch {
       toast({

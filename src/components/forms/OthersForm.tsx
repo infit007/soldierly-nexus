@@ -22,6 +22,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const othersSchema = z.object({
   livingStatus: z.enum(["family", "line"], { required_error: "Please select living status" }),
@@ -35,6 +37,7 @@ export function OthersForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<OthersFormData>({
     resolver: zodResolver(othersSchema),
@@ -51,7 +54,8 @@ export function OthersForm() {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           try {
-            localStorage.setItem("otherDetails", JSON.stringify(vals));
+            const key = user ? `otherDetails:${user.id}` : "otherDetails";
+            localStorage.setItem(key, JSON.stringify(vals));
           } catch {}
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
@@ -60,22 +64,34 @@ export function OthersForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("otherDetails");
-    if (saved) {
+    let cancelled = false;
+    async function load() {
       try {
-        form.reset(JSON.parse(saved));
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.others) {
+          form.reset(profile.others);
+          return;
+        }
       } catch {}
+      const key = user ? `otherDetails:${user.id}` : "otherDetails";
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try { form.reset(JSON.parse(saved)); } catch {}
+      }
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: OthersFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1000));
-      localStorage.setItem("otherDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/others", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `otherDetails:${user.id}` : "otherDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({ title: "Success", description: "Details saved" });
     } catch {
       toast({

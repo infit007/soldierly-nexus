@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, User } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
 
 const personalDetailsSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
@@ -36,26 +38,21 @@ const personalDetailsSchema = z.object({
 type PersonalDetailsFormData = z.infer<typeof personalDetailsSchema>;
 
 const ranks = [
-  "Private",
-  "Lance Corporal",
-  "Corporal",
-  "Sergeant",
-  "Staff Sergeant",
-  "Warrant Officer",
-  "Second Lieutenant",
-  "Lieutenant",
-  "Captain",
-  "Major",
-  "Lieutenant Colonel",
-  "Colonel",
-  "Brigadier",
-  "Major General",
+  "AV",
+  "SEP",
+  "L/NK",
+  "NK",
+  "AAV",
+  "N/B SUB",
+  "SUB",
+  "SUB MAJ",
 ];
 
 export function PersonalDetailsForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<PersonalDetailsFormData>({
     resolver: zodResolver(personalDetailsSchema),
@@ -74,14 +71,15 @@ export function PersonalDetailsForm() {
     },
   });
 
-  // Auto-save functionality
+  // Auto-save functionality (local fallback, namespaced by user)
   useEffect(() => {
     const subscription = form.watch((data) => {
       if (Object.values(data).some((value) => value !== "")) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           try {
-            localStorage.setItem("personalDetails", JSON.stringify(data));
+            const key = user ? `personalDetails:${user.id}` : "personalDetails";
+            localStorage.setItem(key, JSON.stringify(data));
           } catch {
             // ignore storage errors
           }
@@ -92,26 +90,38 @@ export function PersonalDetailsForm() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form]);
+  }, [form, user]);
 
-  // Load saved data on component mount
+  // Load saved data from API on mount; fallback to localStorage
   useEffect(() => {
-    const savedData = localStorage.getItem("personalDetails");
-    if (savedData) {
+    let cancelled = false;
+    async function load() {
       try {
-        const parsed = JSON.parse(savedData);
-        form.reset(parsed);
-      } catch {
-        // corrupted storage; ignore
-      }
+        const profile = await apiFetch<any>("/api/profile");
+        if (!cancelled && profile?.personalDetails) {
+          form.reset(profile.personalDetails);
+          return;
+        }
+      } catch {}
+      try {
+        const key = user ? `personalDetails:${user.id}` : "personalDetails";
+        const savedData = localStorage.getItem(key);
+        if (savedData) {
+          const parsed = JSON.parse(savedData);
+          form.reset(parsed);
+        }
+      } catch {}
     }
-  }, [form]);
+    load();
+    return () => { cancelled = true };
+  }, [form, user]);
 
   const onSubmit = async (data: PersonalDetailsFormData) => {
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      localStorage.setItem("personalDetails", JSON.stringify(data));
+      await apiFetch("/api/profile/personal", { method: "PUT", body: JSON.stringify(data) });
+      const key = user ? `personalDetails:${user.id}` : "personalDetails";
+      localStorage.setItem(key, JSON.stringify(data));
       toast({
         title: "Success",
         description: "Personal details saved successfully",
