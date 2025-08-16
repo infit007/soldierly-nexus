@@ -14,7 +14,7 @@ const PORT = Number(process.env.PORT || 5000)
 app.use(express.json())
 app.use(cookieParser())
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  origin: process.env.CORS_ORIGIN || 'https://soldierly-nexus.onrender.com' || 'http://localhost:8080' || 'https://soldierly-nexus.vercel.app' ,
   credentials: true,
 }))
 
