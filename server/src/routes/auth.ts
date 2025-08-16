@@ -1,12 +1,13 @@
-const { Router } = require('express')
-const bcrypt = require('bcrypt')
-const jwt = require('jsonwebtoken')
-const { prisma } = require('../db')
-const { requireAuth, requireRole } = require('../middleware/auth')
+import { Router, Request, Response } from 'express'
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+import { prisma } from '../db'
+import { requireAuth, requireRole } from '../middleware/auth'
+import { AuthenticatedRequest } from '../types'
 
 const router = Router()
 
-function setAuthCookie(res, payload) {
+function setAuthCookie(res: Response, payload: any) {
   const secret = process.env.JWT_SECRET || 'dev-secret'
   const token = jwt.sign(payload, secret, { expiresIn: '7d' })
   const isProd = process.env.NODE_ENV === 'production'
@@ -19,7 +20,7 @@ function setAuthCookie(res, payload) {
   })
 }
 
-router.post('/signup', async (req, res) => {
+router.post('/signup', async (req: Request, res: Response) => {
   const { username, email, password } = req.body
   if (!username || !email || !password) return res.status(400).json({ error: 'Missing fields' })
   
@@ -59,7 +60,7 @@ router.post('/signup', async (req, res) => {
   }
 })
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response) => {
   const { usernameOrEmail, password } = req.body
   if (!usernameOrEmail || !password) return res.status(400).json({ error: 'Missing fields' })
   
@@ -92,12 +93,12 @@ router.post('/login', async (req, res) => {
   }
 })
 
-router.post('/logout', (_req, res) => {
+router.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie('token', { path: '/' })
   res.json({ ok: true })
 })
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const auth = req.auth
     const user = await prisma.user.findUnique({
@@ -121,7 +122,7 @@ router.get('/me', requireAuth, async (req, res) => {
 })
 
 // Admin statistics endpoint
-router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Get total counts
     const totalUsers = await prisma.user.count()
@@ -198,7 +199,7 @@ router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req, res) =
 })
 
 // Get all users with their profile data
-router.get('/admin/users', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get('/admin/users', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
@@ -231,7 +232,7 @@ router.get('/admin/users', requireAuth, requireRole('ADMIN'), async (req, res) =
 })
 
 // Get specific user profile by ID
-router.get('/admin/users/:userId', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get('/admin/users/:userId', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId } = req.params
     const user = await prisma.user.findUnique({
@@ -266,7 +267,7 @@ router.get('/admin/users/:userId', requireAuth, requireRole('ADMIN'), async (req
 })
 
 // Update army number endpoint
-router.put('/update-army-number', requireAuth, async (req, res) => {
+router.put('/update-army-number', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { armyNumber } = req.body
   if (!armyNumber) return res.status(400).json({ error: 'Army number is required' })
   
@@ -303,7 +304,7 @@ router.put('/update-army-number', requireAuth, async (req, res) => {
 })
 
 // Sample protected routes
-router.get('/admin/ping', requireAuth, requireRole('ADMIN'), (_req, res) => res.json({ ok: true, scope: 'admin' }))
-router.get('/user/ping', requireAuth, requireRole('USER'), (_req, res) => res.json({ ok: true, scope: 'user' }))
+router.get('/admin/ping', requireAuth, requireRole('ADMIN'), (_req: AuthenticatedRequest, res: Response) => res.json({ ok: true, scope: 'admin' }))
+router.get('/user/ping', requireAuth, requireRole('USER'), (_req: AuthenticatedRequest, res: Response) => res.json({ ok: true, scope: 'user' }))
 
-module.exports = router
+export default router

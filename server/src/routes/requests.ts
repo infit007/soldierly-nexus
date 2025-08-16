@@ -1,16 +1,17 @@
-const { Router } = require('express')
-const { prisma } = require('../db')
-const { requireAuth, requireRole } = require('../middleware/auth')
+import { Router, Request, Response } from 'express'
+import { prisma } from '../db'
+import { requireAuth, requireRole } from '../middleware/auth'
+import { AuthenticatedRequest } from '../types'
 
 const router = Router()
 
-async function ensureProfile(userId) {
+async function ensureProfile(userId: string) {
   const existing = await prisma.userProfile.findUnique({ where: { userId } })
   if (existing) return existing
   return prisma.userProfile.create({ data: { userId } })
 }
 
-async function applyApprovedRequest(reqRow) {
+async function applyApprovedRequest(reqRow: any) {
   const { type, data } = reqRow
   const { userId } = data || {}
   if (!userId) return
@@ -54,7 +55,7 @@ async function applyApprovedRequest(reqRow) {
     }
     case 'PROFILE_UPDATE': {
       const { section, data: sectionData } = data
-      const map = {
+      const map: Record<string, string> = {
         personal: 'personalDetails',
         family: 'family',
         education: 'education',
@@ -77,7 +78,7 @@ async function applyApprovedRequest(reqRow) {
 }
 
 // Admin: list requests
-router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const status = req.query.status && String(req.query.status).toUpperCase()
     const type = req.query.type && String(req.query.type).toUpperCase()
@@ -124,7 +125,7 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req, res
 })
 
 // Admin: approve a request and apply effect
-router.post('/admin/requests/:id/approve', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.post('/admin/requests/:id/approve', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params
   try {
     const request = await prisma.request.findUnique({ where: { id } })
@@ -147,7 +148,7 @@ router.post('/admin/requests/:id/approve', requireAuth, requireRole('ADMIN'), as
 })
 
 // Admin: reject a request with optional reason
-router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params
   const { reason } = req.body || {}
   try {
@@ -163,4 +164,4 @@ router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), asy
   }
 })
 
-module.exports = router
+export default router

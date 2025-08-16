@@ -1,17 +1,18 @@
-const { Router } = require('express')
-const { prisma } = require('../db')
-const { requireAuth } = require('../middleware/auth')
+import { Router, Request, Response } from 'express'
+import { prisma } from '../db'
+import { requireAuth } from '../middleware/auth'
+import { AuthenticatedRequest } from '../types'
 
 const router = Router()
 
 // Ensure a profile row exists for the current user
-async function ensureProfile(userId) {
+async function ensureProfile(userId: string) {
   const existing = await prisma.userProfile.findUnique({ where: { userId } })
   if (existing) return existing
   return prisma.userProfile.create({ data: { userId } })
 }
 
-router.get('/profile', requireAuth, async (req, res) => {
+router.get('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     const profile = await prisma.userProfile.findUnique({ where: { userId } })
@@ -22,7 +23,7 @@ router.get('/profile', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/personal', requireAuth, async (req, res) => {
+router.put('/profile/personal', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -37,7 +38,7 @@ router.put('/profile/personal', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/family', requireAuth, async (req, res) => {
+router.put('/profile/family', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -52,7 +53,7 @@ router.put('/profile/family', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/education', requireAuth, async (req, res) => {
+router.put('/profile/education', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -67,7 +68,7 @@ router.put('/profile/education', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/medical', requireAuth, async (req, res) => {
+router.put('/profile/medical', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -82,7 +83,7 @@ router.put('/profile/medical', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/others', requireAuth, async (req, res) => {
+router.put('/profile/others', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -97,7 +98,7 @@ router.put('/profile/others', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/leave', requireAuth, async (req, res) => {
+router.put('/profile/leave', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -112,7 +113,7 @@ router.put('/profile/leave', requireAuth, async (req, res) => {
   }
 })
 
-router.put('/profile/salary', requireAuth, async (req, res) => {
+router.put('/profile/salary', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth.userId
     await ensureProfile(userId)
@@ -127,6 +128,6 @@ router.put('/profile/salary', requireAuth, async (req, res) => {
   }
 })
 
-module.exports = router
+export default router
 
 

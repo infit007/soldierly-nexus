@@ -1,7 +1,7 @@
-const jwt = require('jsonwebtoken')
-const { AuthenticatedRequest } = require('../types')
+import jwt from 'jsonwebtoken'
+import { AuthenticatedRequest } from '../types'
 
-function requireAuth(req: any, res: any, next: any) {
+export function requireAuth(req: any, res: any, next: any) {
   const token = req.cookies?.token
   if (!token) return res.status(401).json({ error: 'Unauthorized' })
   try {
@@ -14,7 +14,7 @@ function requireAuth(req: any, res: any, next: any) {
   }
 }
 
-function requireRole(role: string) {
+export function requireRole(role: string) {
   return (req: any, res: any, next: any) => {
     const auth = req.auth
     if (!auth) return res.status(401).json({ error: 'Unauthorized' })
@@ -22,5 +22,3 @@ function requireRole(role: string) {
     next()
   }
 }
-
-module.exports = { requireAuth, requireRole }

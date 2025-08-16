@@ -1,11 +1,12 @@
-const { Router } = require('express')
-const { prisma } = require('../db')
-const { requireAuth, requireRole } = require('../middleware/auth')
+import { Router, Request, Response } from 'express'
+import { prisma } from '../db'
+import { requireAuth, requireRole } from '../middleware/auth'
+import { AuthenticatedRequest } from '../types'
 
 const router = Router()
 
 // Manager: list all users (basic info) for selection in manager tools
-router.get('/manager/users', requireAuth, requireRole('MANAGER'), async (_req, res) => {
+router.get('/manager/users', requireAuth, requireRole('MANAGER'), async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { username: 'asc' },
@@ -19,7 +20,7 @@ router.get('/manager/users', requireAuth, requireRole('MANAGER'), async (_req, r
 })
 
 // Manager: fetch a specific user's profile (view-only)
-router.get('/manager/users/:id/profile', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.get('/manager/users/:id/profile', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params
     const user = await prisma.user.findUnique({
@@ -37,7 +38,7 @@ router.get('/manager/users/:id/profile', requireAuth, requireRole('MANAGER'), as
 })
 
 // Helper to create a request row
-async function createRequest(requesterId, type, data) {
+async function createRequest(requesterId: string, type: string, data: any) {
   return prisma.request.create({
     data: {
       type,
@@ -56,7 +57,7 @@ async function createRequest(requesterId, type, data) {
 }
 
 // Manager: create Leave request for a user
-router.post('/manager/requests/leave', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.post('/manager/requests/leave', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requesterId = req.auth.userId
     const { userId, leave } = req.body
@@ -74,7 +75,7 @@ router.post('/manager/requests/leave', requireAuth, requireRole('MANAGER'), asyn
 })
 
 // Manager: create Outpass request for a user
-router.post('/manager/requests/outpass', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.post('/manager/requests/outpass', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requesterId = req.auth.userId
     const { userId, outpass } = req.body
@@ -92,7 +93,7 @@ router.post('/manager/requests/outpass', requireAuth, requireRole('MANAGER'), as
 })
 
 // Manager: create Salary update request for a user
-router.post('/manager/requests/salary', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.post('/manager/requests/salary', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requesterId = req.auth.userId
     const { userId, salary } = req.body
@@ -111,7 +112,7 @@ router.post('/manager/requests/salary', requireAuth, requireRole('MANAGER'), asy
 
 // Manager: propose edits to a user's registration/profile (goes to admin approval)
 // section: one of [personal, family, education, medical, others]
-router.post('/manager/requests/profile-edit', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.post('/manager/requests/profile-edit', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requesterId = req.auth.userId
     const { userId, section, data } = req.body
@@ -131,7 +132,7 @@ router.post('/manager/requests/profile-edit', requireAuth, requireRole('MANAGER'
 })
 
 // Manager: list own requests
-router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req, res) => {
+router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requesterId = req.auth.userId
     const status = req.query.status && String(req.query.status).toUpperCase()
@@ -148,4 +149,4 @@ router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req,
   }
 })
 
-module.exports = router
+export default router

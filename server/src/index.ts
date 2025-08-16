@@ -1,12 +1,12 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const cookieParser = require('cookie-parser')
-const authRoutes = require('./routes/auth')
-const profileRoutes = require('./routes/profile')
-const managerRoutes = require('./routes/manager')
-const requestsRoutes = require('./routes/requests')
-const { prisma } = require('./db')
+import 'dotenv/config'
+import express from 'express'
+import cors from 'cors'
+import cookieParser from 'cookie-parser'
+import authRoutes from './routes/auth'
+import profileRoutes from './routes/profile'
+import managerRoutes from './routes/manager'
+import requestsRoutes from './routes/requests'
+import { prisma } from './db'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
