@@ -2,11 +2,11 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
-import authRoutes from './routes/auth'
-import profileRoutes from './routes/profile'
-import managerRoutes from './routes/manager'
-import requestsRoutes from './routes/requests'
-import { prisma } from './db'
+import authRoutes from './routes/auth.js'
+import profileRoutes from './routes/profile.js'
+import managerRoutes from './routes/manager.js'
+import requestsRoutes from './routes/requests.js'
+import { prisma } from './db.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
