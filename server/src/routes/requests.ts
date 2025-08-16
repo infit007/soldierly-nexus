@@ -33,7 +33,7 @@ async function applyApprovedRequest(reqRow: any) {
       const profile = await prisma.userProfile.findUnique({ where: { userId } })
       const leaveData = profile?.leaveData || {}
       const safeLeaveData = isObject(leaveData) ? leaveData : {}
-      const requests = isArray(safeLeaveData.requests) ? safeLeaveData.requests : []
+      const requests = isArray((safeLeaveData as any).requests) ? (safeLeaveData as any).requests : []
       requests.push({ ...data.leave, approvedAt: new Date().toISOString() })
       await prisma.userProfile.update({
         where: { userId },
@@ -46,7 +46,7 @@ async function applyApprovedRequest(reqRow: any) {
       const profile = await prisma.userProfile.findUnique({ where: { userId } })
       const leaveData = profile?.leaveData || {}
       const safeLeaveData = isObject(leaveData) ? leaveData : {}
-      const outpasses = isArray(safeLeaveData.outpasses) ? safeLeaveData.outpasses : []
+      const outpasses = isArray((safeLeaveData as any).outpasses) ? (safeLeaveData as any).outpasses : []
       outpasses.push({ ...data.outpass, approvedAt: new Date().toISOString() })
       await prisma.userProfile.update({
         where: { userId },
@@ -115,7 +115,7 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
 
     // Collect all unique user IDs with proper type checking
     const userIds = [...new Set(requests.map(r => {
-      const requestData = r.data
+      const requestData = r.data as any
       if (isObject(requestData) && typeof requestData.userId === 'string') {
         return requestData.userId
       }
@@ -135,7 +135,7 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
     const requestsWithTargetUser = requests.map(request => ({
       ...request,
       targetUser: (() => {
-        const requestData = request.data
+        const requestData = request.data as any
         if (isObject(requestData) && typeof requestData.userId === 'string') {
           return userMap.get(requestData.userId) || null
         }
@@ -186,7 +186,7 @@ router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), asy
       data: { 
         status: 'REJECTED', 
         data: { 
-          ...(isObject(request.data) ? request.data : {}), 
+          ...(isObject(request.data as any) ? request.data as any : {}), 
           rejectionReason: reason || null 
         } 
       } 
