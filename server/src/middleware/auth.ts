@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken')
+const { AuthenticatedRequest } = require('../types')
 
-function requireAuth(req, res, next) {
+function requireAuth(req: any, res: any, next: any) {
   const token = req.cookies?.token
   if (!token) return res.status(401).json({ error: 'Unauthorized' })
   try {
@@ -13,8 +14,8 @@ function requireAuth(req, res, next) {
   }
 }
 
-function requireRole(role) {
-  return (req, res, next) => {
+function requireRole(role: string) {
+  return (req: any, res: any, next: any) => {
     const auth = req.auth
     if (!auth) return res.status(401).json({ error: 'Unauthorized' })
     if (auth.role !== role) return res.status(403).json({ error: 'Forbidden' })
