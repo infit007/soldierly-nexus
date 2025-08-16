@@ -11,6 +11,15 @@ async function ensureProfile(userId: string) {
   return prisma.userProfile.create({ data: { userId } })
 }
 
+// Type guards for JSON data
+function isObject(value: any): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isArray(value: any): value is any[] {
+  return Array.isArray(value)
+}
+
 async function applyApprovedRequest(reqRow: any) {
   const { type, data } = reqRow
   const { userId } = data || {}
@@ -23,11 +32,12 @@ async function applyApprovedRequest(reqRow: any) {
       // Merge into leaveData (append to requests array)
       const profile = await prisma.userProfile.findUnique({ where: { userId } })
       const leaveData = profile?.leaveData || {}
-      const requests = Array.isArray(leaveData.requests) ? leaveData.requests : []
+      const safeLeaveData = isObject(leaveData) ? leaveData : {}
+      const requests = isArray(safeLeaveData.requests) ? safeLeaveData.requests : []
       requests.push({ ...data.leave, approvedAt: new Date().toISOString() })
       await prisma.userProfile.update({
         where: { userId },
-        data: { leaveData: { ...leaveData, requests }, updatedAt: new Date() }
+        data: { leaveData: { ...safeLeaveData, requests }, updatedAt: new Date() }
       })
       break
     }
@@ -35,11 +45,12 @@ async function applyApprovedRequest(reqRow: any) {
       // Merge into leaveData.outpasses
       const profile = await prisma.userProfile.findUnique({ where: { userId } })
       const leaveData = profile?.leaveData || {}
-      const outpasses = Array.isArray(leaveData.outpasses) ? leaveData.outpasses : []
+      const safeLeaveData = isObject(leaveData) ? leaveData : {}
+      const outpasses = isArray(safeLeaveData.outpasses) ? safeLeaveData.outpasses : []
       outpasses.push({ ...data.outpass, approvedAt: new Date().toISOString() })
       await prisma.userProfile.update({
         where: { userId },
-        data: { leaveData: { ...leaveData, outpasses }, updatedAt: new Date() }
+        data: { leaveData: { ...safeLeaveData, outpasses }, updatedAt: new Date() }
       })
       break
     }
@@ -47,9 +58,11 @@ async function applyApprovedRequest(reqRow: any) {
       // Replace/merge salaryData
       const profile = await prisma.userProfile.findUnique({ where: { userId } })
       const current = profile?.salaryData || {}
+      const safeCurrent = isObject(current) ? current : {}
+      const safeSalaryData = isObject(data.salary) ? data.salary : {}
       await prisma.userProfile.update({
         where: { userId },
-        data: { salaryData: { ...current, ...data.salary }, updatedAt: new Date() }
+        data: { salaryData: { ...safeCurrent, ...safeSalaryData }, updatedAt: new Date() }
       })
       break
     }
@@ -100,8 +113,14 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
       }
     })
 
-    // Collect all unique user IDs
-    const userIds = [...new Set(requests.map(r => r.data?.userId).filter(Boolean))]
+    // Collect all unique user IDs with proper type checking
+    const userIds = [...new Set(requests.map(r => {
+      const requestData = r.data
+      if (isObject(requestData) && typeof requestData.userId === 'string') {
+        return requestData.userId
+      }
+      return null
+    }).filter(Boolean))]
     
     // Fetch all target users in one query
     const targetUsers = userIds.length > 0 ? await prisma.user.findMany({
@@ -115,7 +134,13 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
     // Add target user information for each request
     const requestsWithTargetUser = requests.map(request => ({
       ...request,
-      targetUser: request.data?.userId ? userMap.get(request.data.userId) || null : null
+      targetUser: (() => {
+        const requestData = request.data
+        if (isObject(requestData) && typeof requestData.userId === 'string') {
+          return userMap.get(requestData.userId) || null
+        }
+        return null
+      })()
     }))
     res.json({ ok: true, requests: requestsWithTargetUser })
   } catch (e) {
@@ -156,7 +181,16 @@ router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), asy
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'PENDING') return res.status(400).json({ error: 'Request not pending' })
 
-    const updated = await prisma.request.update({ where: { id }, data: { status: 'REJECTED', data: { ...request.data, rejectionReason: reason || null } } })
+    const updated = await prisma.request.update({ 
+      where: { id }, 
+      data: { 
+        status: 'REJECTED', 
+        data: { 
+          ...(isObject(request.data) ? request.data : {}), 
+          rejectionReason: reason || null 
+        } 
+      } 
+    })
     res.json({ ok: true, request: updated })
   } catch (e) {
     console.error('Reject request error:', e)
