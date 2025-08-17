@@ -13,8 +13,8 @@ type User = {
 type AuthContextValue = {
   user: User | null
   loading: boolean
-  login: (usernameOrEmail: string, password: string) => Promise<User>
-  signup: (username: string, email: string, password: string) => Promise<User>
+  login: (usernameOrEmail: string, password: string) => Promise<{ success: boolean; user: User | null; error: string | null }>
+  signup: (username: string, email: string, password: string) => Promise<{ success: boolean; user: User | null; error: string | null }>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   updateArmyNumber: (armyNumber: string) => Promise<User>
@@ -43,21 +43,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = async (usernameOrEmail: string, password: string) => {
-    const loggedIn = await apiFetch<User>('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ usernameOrEmail, password }),
-    })
-    setUser(loggedIn)
-    return loggedIn
+    try {
+      const loggedIn = await apiFetch<User>('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ usernameOrEmail, password }),
+      })
+      setUser(loggedIn)
+      return { success: true, user: loggedIn, error: null }
+    } catch (error: any) {
+      const errorMessage = error.message || 'Login failed. Please try again.'
+      return { success: false, user: null, error: errorMessage }
+    }
   }
 
   const signup = async (username: string, email: string, password: string) => {
-    const created = await apiFetch<User>('/api/signup', {
-      method: 'POST',
-      body: JSON.stringify({ username, email, password }),
-    })
-    setUser(created)
-    return created
+    try {
+      const created = await apiFetch<User>('/api/signup', {
+        method: 'POST',
+        body: JSON.stringify({ username, email, password }),
+      })
+      setUser(created)
+      return { success: true, user: created, error: null }
+    } catch (error: any) {
+      const errorMessage = error.message || 'Signup failed. Please try again.'
+      return { success: false, user: null, error: errorMessage }
+    }
   }
 
   const logout = async () => {
