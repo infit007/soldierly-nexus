@@ -21,7 +21,8 @@ import {
   GraduationCap,
   Home,
   Clock,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
@@ -301,6 +302,7 @@ export default function AdminDashboard() {
   const [allRequests, setAllRequests] = useState<AdminRequestRow[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastUpdate, setLastUpdate] = useState(Date.now())
   const { logout } = useAuth()
   const navigate = useNavigate()
 
@@ -400,12 +402,24 @@ export default function AdminDashboard() {
       // Make the API call
       await apiFetch(`/api/admin/requests/${id}/approve`, { method: 'POST' })
       
+      console.log('Request approved, refreshing data...')
+      
       // Refresh all data immediately for real-time updates
-      await Promise.all([
+      const [requestsResult, statsResult, allRequestsResult] = await Promise.all([
         fetchRequests(),
         fetchStats(),
         fetchAllRequests()
       ])
+      
+      console.log('Data refresh completed:', {
+        requests: requestsResult,
+        stats: statsResult,
+        allRequests: allRequestsResult
+      })
+      
+      // Force a re-render by updating a timestamp
+      setLastUpdate(Date.now())
+      setRefreshing(false)
       
     } catch (e) {
       console.error('Approve failed', e)
@@ -437,12 +451,24 @@ export default function AdminDashboard() {
       // Make the API call
       await apiFetch(`/api/admin/requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: null }) })
       
+      console.log('Request rejected, refreshing data...')
+      
       // Refresh all data immediately for real-time updates
-      await Promise.all([
+      const [requestsResult, statsResult, allRequestsResult] = await Promise.all([
         fetchRequests(),
         fetchStats(),
         fetchAllRequests()
       ])
+      
+      console.log('Data refresh completed:', {
+        requests: requestsResult,
+        stats: statsResult,
+        allRequests: allRequestsResult
+      })
+      
+      // Force a re-render by updating a timestamp
+      setLastUpdate(Date.now())
+      setRefreshing(false)
       
     } catch (e) {
       console.error('Reject failed', e)
@@ -542,14 +568,42 @@ export default function AdminDashboard() {
                 <p className="text-muted-foreground">System overview and user analytics</p>
               </div>
             </div>
-            <Button 
-              onClick={handleLogout}
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <LogOut className="h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button 
+                onClick={async () => {
+                  setRefreshing(true)
+                  await Promise.all([
+                    fetchRequests(),
+                    fetchStats(),
+                    fetchAllRequests()
+                  ])
+                  setLastUpdate(Date.now())
+                  setRefreshing(false)
+                  toast({
+                    title: "Success!",
+                    description: "Data refreshed successfully",
+                  })
+                }}
+                variant="outline"
+                className="flex items-center gap-2"
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                ) : (
+                  <div className="h-4 w-4">🔄</div>
+                )}
+                {refreshing ? 'Refreshing...' : 'Refresh Data'}
+              </Button>
+              <Button 
+                onClick={handleLogout}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
 
           {/* Charts Summary removed per request */}
