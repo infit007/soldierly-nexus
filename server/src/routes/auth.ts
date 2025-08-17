@@ -10,13 +10,15 @@ const router = Router()
 function setAuthCookie(res: Response, payload: any) {
   const secret = process.env.JWT_SECRET || 'dev-secret'
   const token = jwt.sign(payload, secret, { expiresIn: '7d' })
-  const isProd = process.env.NODE_ENV === 'production'
+  
+  // Always use secure cookies for cross-domain requests
   res.cookie('token', token, {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
+    secure: true, // Always secure for cross-domain
+    sameSite: 'none', // Required for cross-domain
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
+    domain: undefined, // Let browser set the domain
   })
 }
 
@@ -94,7 +96,11 @@ router.post('/login', async (req: Request, res: Response) => {
 })
 
 router.post('/logout', (_req: Request, res: Response) => {
-  res.clearCookie('token', { path: '/' })
+  res.clearCookie('token', { 
+    path: '/',
+    secure: true,
+    sameSite: 'none'
+  })
   res.json({ ok: true })
 })
 
