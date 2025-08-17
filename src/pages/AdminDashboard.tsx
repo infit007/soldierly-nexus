@@ -299,6 +299,7 @@ export default function AdminDashboard() {
   const [requests, setRequests] = useState<AdminRequestRow[]>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [allRequests, setAllRequests] = useState<AdminRequestRow[]>([])
+  const [refreshing, setRefreshing] = useState(false)
   const { logout } = useAuth()
   const navigate = useNavigate()
 
@@ -315,8 +316,6 @@ export default function AdminDashboard() {
       setStats(data)
     } catch (error) {
       console.error('Failed to fetch stats:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -361,6 +360,8 @@ export default function AdminDashboard() {
 
   const approveRequest = async (id: string) => {
     try {
+      setRefreshing(true)
+      
       // Optimistic update - remove from pending requests immediately
       setRequests(prev => prev.filter(r => r.id !== id))
       
@@ -373,27 +374,31 @@ export default function AdminDashboard() {
       // Make the API call
       await apiFetch(`/api/admin/requests/${id}/approve`, { method: 'POST' })
       
-      // Refresh data in background (don't wait for it)
-      Promise.all([
+      // Refresh all data immediately for real-time updates
+      await Promise.all([
         fetchRequests(),
         fetchStats(),
         fetchAllRequests()
-      ]).catch(e => console.error('Background refresh failed:', e))
+      ])
       
     } catch (e) {
       console.error('Approve failed', e)
       // Revert optimistic update on error
-      fetchRequests()
+      await fetchRequests()
       toast({
         title: "Error",
         description: "Failed to approve request",
         variant: "destructive",
       })
+    } finally {
+      setRefreshing(false)
     }
   }
 
   const rejectRequest = async (id: string) => {
     try {
+      setRefreshing(true)
+      
       // Optimistic update - remove from pending requests immediately
       setRequests(prev => prev.filter(r => r.id !== id))
       
@@ -406,22 +411,24 @@ export default function AdminDashboard() {
       // Make the API call
       await apiFetch(`/api/admin/requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: null }) })
       
-      // Refresh data in background (don't wait for it)
-      Promise.all([
+      // Refresh all data immediately for real-time updates
+      await Promise.all([
         fetchRequests(),
         fetchStats(),
         fetchAllRequests()
-      ]).catch(e => console.error('Background refresh failed:', e))
+      ])
       
     } catch (e) {
       console.error('Reject failed', e)
       // Revert optimistic update on error
-      fetchRequests()
+      await fetchRequests()
       toast({
         title: "Error",
         description: "Failed to reject request",
         variant: "destructive",
       })
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -518,6 +525,13 @@ export default function AdminDashboard() {
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
+              {refreshing && (
+                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  <span className="text-blue-600 text-sm">Refreshing data...</span>
+                </div>
+              )}
+              
               {/* Requests-centric bar charts */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {(['LEAVE','OUTPASS','SALARY','PROFILE_UPDATE'] as const).map((typeKey) => {
@@ -632,6 +646,13 @@ export default function AdminDashboard() {
 
             {/* Requests Tab */}
             <TabsContent value="requests" className="space-y-4">
+              {refreshing && (
+                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  <span className="text-blue-600 text-sm">Refreshing data...</span>
+                </div>
+              )}
+              
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -664,8 +685,22 @@ export default function AdminDashboard() {
                               )}
                             </div>
                             <div className="flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => approveRequest(r.id)}>Approve</Button>
-                              <Button size="sm" variant="destructive" onClick={() => rejectRequest(r.id)}>Reject</Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => approveRequest(r.id)}
+                                disabled={refreshing}
+                              >
+                                {refreshing ? 'Processing...' : 'Approve'}
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="destructive" 
+                                onClick={() => rejectRequest(r.id)}
+                                disabled={refreshing}
+                              >
+                                {refreshing ? 'Processing...' : 'Reject'}
+                              </Button>
                             </div>
                           </div>
                           <div className="mt-2">
@@ -680,6 +715,13 @@ export default function AdminDashboard() {
             </TabsContent>
 
             <TabsContent value="charts" className="space-y-4">
+              {refreshing && (
+                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  <span className="text-blue-600 text-sm">Refreshing data...</span>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {(['LEAVE','OUTPASS','SALARY','PROFILE_UPDATE'] as const).map((typeKey) => {
                   const byType = allRequests.filter(r => r.type === typeKey)
