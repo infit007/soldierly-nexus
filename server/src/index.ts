@@ -14,7 +14,23 @@ const PORT = Number(process.env.PORT || 5000)
 app.use(express.json())
 app.use(cookieParser())
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'https://soldierly-nexus.onrender.com' || 'http://localhost:8080' || 'https://soldierly-nexus.vercel.app' ,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://soldierly-nexus.vercel.app',
+      'https://soldierly-nexus.onrender.com',
+      'http://localhost:8080',
+      'http://localhost:8081'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }))
 
@@ -25,6 +41,15 @@ app.get('/api/health', async (_req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false })
   }
+})
+
+// Debug route to test API
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'API is working!',
+    timestamp: new Date().toISOString(),
+    headers: req.headers
+  })
 })
 
 app.use('/api', authRoutes)
