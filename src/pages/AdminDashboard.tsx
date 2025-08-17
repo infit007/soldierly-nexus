@@ -300,14 +300,38 @@ export default function AdminDashboard() {
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [allRequests, setAllRequests] = useState<AdminRequestRow[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const { logout } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetchStats()
-    fetchUsers()
-    fetchRequests()
-    fetchAllRequests()
+    const initializeData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        // Run all fetches in parallel but handle errors gracefully
+        const results = await Promise.allSettled([
+          fetchStats(),
+          fetchUsers(),
+          fetchRequests(),
+          fetchAllRequests()
+        ])
+        
+        // Check for any failures
+        const failedResults = results.filter(result => result.status === 'rejected')
+        if (failedResults.length > 0) {
+          console.error('Some API calls failed:', failedResults)
+          setError('Some data failed to load. Please refresh the page.')
+        }
+      } catch (error) {
+        console.error('Failed to initialize admin dashboard:', error)
+        setError('Failed to load admin dashboard. Please check your connection.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    initializeData()
   }, [])
 
   const fetchStats = async () => {
@@ -316,6 +340,8 @@ export default function AdminDashboard() {
       setStats(data)
     } catch (error) {
       console.error('Failed to fetch stats:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -474,7 +500,21 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading admin dashboard...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="text-lg">Loading admin dashboard...</div>
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="text-red-600 text-sm">{error}</div>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-2 text-red-600 hover:text-red-800 underline text-sm"
+              >
+                Click here to retry
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     )
   }
