@@ -35,6 +35,7 @@ model UserProfile {
   others          Json?
   leaveData       Json?    @map("leave")
   salaryData      Json?    @map("salary")
+  documents       Json?    // Store document metadata and file paths for each section
   updatedAt       DateTime @default(now()) @map("updated_at")
 
   @@map("user_profiles")
@@ -53,6 +54,8 @@ model Request {
   status    String   @default("PENDING")
   requesterId String
   requester User     @relation(fields: [requesterId], references: [id])
+  adminRemark String? @map("admin_remark")
+  managerResponse String? @map("manager_response")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

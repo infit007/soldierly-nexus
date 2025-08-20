@@ -140,7 +140,7 @@ router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req:
     const requests = await prisma.request.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      select: { id: true, type: true, status: true, data: true, createdAt: true, updatedAt: true }
+      select: { id: true, type: true, status: true, data: true, adminRemark: true, managerResponse: true, createdAt: true, updatedAt: true }
     })
     return res.json({ ok: true, requests })
   } catch (e) {

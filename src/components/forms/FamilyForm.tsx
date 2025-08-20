@@ -1,39 +1,27 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Users, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { DocumentUpload } from "@/components/DocumentUpload";
 
 const familyMemberSchema = z.object({
-  Name: z.string().optional(),
-  DOB: z.string().optional(),
-  relation: z.string().optional(),
-  Gender: z.string().optional(),
+  Name: z.string().min(2, "Name must be at least 2 characters"),
+  DOB: z.string().min(1, "Date of birth is required"),
+  relation: z.string().min(1, "Relation is required"),
+  Gender: z.string().min(1, "Gender is required"),
 });
 
 const familySchema = z.object({
-  members: z.array(familyMemberSchema),
+  members: z.array(familyMemberSchema).min(1, "At least one family member is required"),
 });
 
 type FamilyFormData = z.infer<typeof familySchema>;
@@ -44,10 +32,12 @@ const relation = [
 const gender=[
   "Male", "Female"
 ]
+
 export function FamilyForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
+  const [documents, setDocuments] = useState<any>({});
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -64,6 +54,50 @@ export function FamilyForm() {
     control: form.control,
     name: "members",
   });
+
+  // Load documents on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const profile = await apiFetch<any>("/api/profile");
+      if (profile?.documents?.family) {
+        setDocuments(prev => ({ ...prev, family: profile.documents.family }));
+      }
+    } catch (error) {
+      console.error("Failed to load documents:", error);
+    }
+  };
+
+  const handleDocumentUpload = async (file: File, section: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('section', section);
+
+    await apiFetch("/api/profile/documents", {
+      method: "POST",
+      body: formData,
+      headers: {}, // Let the browser set the content-type for FormData
+    });
+
+    // Reload documents after upload
+    await loadDocuments();
+  };
+
+  const handleDocumentRemove = async (section: string) => {
+    await apiFetch(`/api/profile/documents/${section}`, {
+      method: "DELETE",
+    });
+
+    // Update local state
+    setDocuments(prev => {
+      const newDocs = { ...prev };
+      delete newDocs[section];
+      return newDocs;
+    });
+  };
 
   useEffect(() => {
     const sub = form.watch((values) => {
@@ -105,8 +139,11 @@ export function FamilyForm() {
       await apiFetch("/api/profile/family", { method: "PUT", body: JSON.stringify(data) });
       const key = user ? `familyDetails:${user.id}` : "familyDetails";
       localStorage.setItem(key, JSON.stringify(data));
-      toast({ title: "Success", description: "Family details saved" });
-    } catch {
+      toast({
+        title: "Success",
+        description: "Family details saved successfully",
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to save family details",
@@ -118,133 +155,172 @@ export function FamilyForm() {
   };
 
   return (
-    <Card className="shadow-soft">
-      <CardHeader>
-        <CardTitle>Family Details</CardTitle>
-        <CardDescription>
-          Provide information about your family members
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {fields.map((field, idx) => (
-              <div key={field.id} className="border rounded-lg p-4 mb-4 relative">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name={`members.${idx}.Name`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`members.${idx}.DOB`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date of Birth</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`members.${idx}.relation`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Relation</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select relation" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {relation.map((rel) => (
-                              <SelectItem key={rel} value={rel}>
-                                {rel}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`members.${idx}.Gender`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Gender</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select gender" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {gender.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                {fields.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="absolute top-2 right-2"
-                    onClick={() => remove(idx)}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => append({ Name: "", DOB: "", relation: "", Gender: "" })}
-            >
-              Add Family Member
-            </Button>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={isLoading} className="min-w-32">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Details
-                  </>
-                )}
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-3 rounded-lg bg-primary/10">
+          <Users className="h-6 w-6 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Family Details</h1>
+          <p className="text-muted-foreground">Manage your family member information</p>
+        </div>
+        {autoSaveStatus !== "idle" && (
+          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            {autoSaveStatus === "saving" && <Loader2 className="h-4 w-4 animate-spin" />}
+            {autoSaveStatus === "saved" && <span className="text-success">Auto-saved</span>}
+          </div>
+        )}
+      </div>
+
+      <Card className="shadow-soft">
+        <CardHeader className="bg-gradient-card rounded-t-lg">
+          <CardTitle>Family Members</CardTitle>
+          <CardDescription>Add and manage your family member details</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {fields.map((field, index) => (
+                <Card key={field.id} className="bg-accent/30">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">Family Member {index + 1}</CardTitle>
+                      {fields.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => remove(index)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name={`members.${index}.Name`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Full Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter full name" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`members.${index}.DOB`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Date of Birth</FormLabel>
+                            <FormControl>
+                              <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`members.${index}.relation`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Relation</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select relation" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {relation.map((rel) => (
+                                  <SelectItem key={rel} value={rel}>
+                                    {rel}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`members.${index}.Gender`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gender</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select gender" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {gender.map((gen) => (
+                                  <SelectItem key={gen} value={gen}>
+                                    {gen}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => append({ Name: "", DOB: "", relation: "", Gender: "" })}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Family Member
               </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={isLoading} className="min-w-32">
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Details
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+
+      {/* Document Upload Section */}
+      <DocumentUpload
+        section="family"
+        onDocumentUpload={handleDocumentUpload}
+        existingDocument={documents.family}
+        onDocumentRemove={handleDocumentRemove}
+      />
+    </div>
   );
 }
 

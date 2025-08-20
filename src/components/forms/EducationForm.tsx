@@ -20,9 +20,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, GraduationCap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { DocumentUpload } from "@/components/DocumentUpload";
 
 const yearSchema = z
   .string()
@@ -60,6 +61,7 @@ export function EducationForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
+  const [documents, setDocuments] = useState<any>({});
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -84,6 +86,50 @@ export function EducationForm() {
       twelfthPercentageOrGPA: "",
     },
   });
+
+  // Load documents on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const profile = await apiFetch<any>("/api/profile");
+      if (profile?.documents?.education) {
+        setDocuments(prev => ({ ...prev, education: profile.documents.education }));
+      }
+    } catch (error) {
+      console.error("Failed to load documents:", error);
+    }
+  };
+
+  const handleDocumentUpload = async (file: File, section: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('section', section);
+
+    await apiFetch("/api/profile/documents", {
+      method: "POST",
+      body: formData,
+      headers: {}, // Let the browser set the content-type for FormData
+    });
+
+    // Reload documents after upload
+    await loadDocuments();
+  };
+
+  const handleDocumentRemove = async (section: string) => {
+    await apiFetch(`/api/profile/documents/${section}`, {
+      method: "DELETE",
+    });
+
+    // Update local state
+    setDocuments(prev => {
+      const newDocs = { ...prev };
+      delete newDocs[section];
+      return newDocs;
+    });
+  };
 
   useEffect(() => {
     const subscription = form.watch((data) => {
@@ -141,7 +187,24 @@ export function EducationForm() {
   };
 
   return (
-    <Card className="shadow-soft">
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-3 rounded-lg bg-primary/10">
+          <GraduationCap className="h-6 w-6 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Education Details</h1>
+          <p className="text-muted-foreground">Manage your educational qualifications and certificates</p>
+        </div>
+        {autoSaveStatus !== "idle" && (
+          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            {autoSaveStatus === "saving" && <Loader2 className="h-4 w-4 animate-spin" />}
+            {autoSaveStatus === "saved" && <span className="text-success">Auto-saved</span>}
+          </div>
+        )}
+      </div>
+
+      <Card className="shadow-soft">
       <CardHeader>
         <CardTitle>Education Details</CardTitle>
         <CardDescription>
@@ -388,5 +451,14 @@ export function EducationForm() {
         </Form>
       </CardContent>
     </Card>
-  );
+
+    {/* Document Upload Section */}
+    <DocumentUpload
+      section="education"
+      onDocumentUpload={handleDocumentUpload}
+      existingDocument={documents.education}
+      onDocumentRemove={handleDocumentRemove}
+    />
+  </div>
+);
 }

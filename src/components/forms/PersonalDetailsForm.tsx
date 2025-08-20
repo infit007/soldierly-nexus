@@ -11,6 +11,25 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, User } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { DocumentUpload } from "@/components/DocumentUpload";
+
+// Custom validation function for date gap
+const validateDateGap = (dateOfBirth: string, dateOfJoining: string) => {
+  if (!dateOfBirth || !dateOfJoining) return true; // Let individual field validation handle empty values
+  
+  const birthDate = new Date(dateOfBirth);
+  const joiningDate = new Date(dateOfJoining);
+  
+  const ageAtJoining = joiningDate.getFullYear() - birthDate.getFullYear();
+  const monthDiff = joiningDate.getMonth() - birthDate.getMonth();
+  
+  // Adjust age if birthday hasn't occurred yet in the joining year
+  if (monthDiff < 0 || (monthDiff === 0 && joiningDate.getDate() < birthDate.getDate())) {
+    return ageAtJoining - 1 >= 15;
+  }
+  
+  return ageAtJoining >= 15;
+};
 
 const personalDetailsSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
@@ -33,6 +52,9 @@ const personalDetailsSchema = z.object({
     .min(10, "Emergency contact phone is required")
     .regex(/^[0-9+\-\s()]{10,}$/, "Valid emergency contact phone is required"),
   emergencyContactRelation: z.string().min(1, "Emergency contact relation is required"),
+}).refine((data) => validateDateGap(data.dateOfBirth, data.dateOfJoining), {
+  message: "There must be at least 15 years between date of birth and date of joining",
+  path: ["dateOfJoining"], // This will show the error on the dateOfJoining field
 });
 
 type PersonalDetailsFormData = z.infer<typeof personalDetailsSchema>;
@@ -51,6 +73,7 @@ const ranks = [
 export function PersonalDetailsForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [documents, setDocuments] = useState<any>({});
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -70,6 +93,50 @@ export function PersonalDetailsForm() {
       emergencyContactRelation: "",
     },
   });
+
+  // Load documents on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const profile = await apiFetch<any>("/api/profile");
+      if (profile?.documents?.personal) {
+        setDocuments(prev => ({ ...prev, personal: profile.documents.personal }));
+      }
+    } catch (error) {
+      console.error("Failed to load documents:", error);
+    }
+  };
+
+  const handleDocumentUpload = async (file: File, section: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('section', section);
+
+    await apiFetch("/api/profile/documents", {
+      method: "POST",
+      body: formData,
+      headers: {}, // Let the browser set the content-type for FormData
+    });
+
+    // Reload documents after upload
+    await loadDocuments();
+  };
+
+  const handleDocumentRemove = async (section: string) => {
+    await apiFetch(`/api/profile/documents/${section}`, {
+      method: "DELETE",
+    });
+
+    // Update local state
+    setDocuments(prev => {
+      const newDocs = { ...prev };
+      delete newDocs[section];
+      return newDocs;
+    });
+  };
 
   // Auto-save functionality (local fallback, namespaced by user)
   useEffect(() => {
@@ -219,10 +286,10 @@ export function PersonalDetailsForm() {
 
                 <FormField
                   control={form.control}
-                  name="dateOfJoining"
+                  name="dateOfBirth"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of Joining</FormLabel>
+                      <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -233,10 +300,10 @@ export function PersonalDetailsForm() {
 
                 <FormField
                   control={form.control}
-                  name="dateOfBirth"
+                  name="dateOfJoining"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of Birth</FormLabel>
+                      <FormLabel>Date of Joining</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -359,6 +426,14 @@ export function PersonalDetailsForm() {
           </Form>
         </CardContent>
       </Card>
+
+      {/* Document Upload Section */}
+      <DocumentUpload
+        section="personal"
+        onDocumentUpload={handleDocumentUpload}
+        existingDocument={documents.personal}
+        onDocumentRemove={handleDocumentRemove}
+      />
     </div>
   );
 }

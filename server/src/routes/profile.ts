@@ -1,130 +1,273 @@
-import { Router, Request, Response } from 'express'
-import { prisma } from '../db.js'
-import { requireAuth } from '../middleware/auth.js'
-import { AuthenticatedRequest } from '../types/index.js'
+import express from 'express'
+import { requireAuth } from '../middleware/auth'
+import { AuthenticatedRequest } from '../types'
+import { prisma } from '../db'
+import multer from 'multer'
+import path from 'path'
+import fs from 'fs'
 
-const router = Router()
+const router = express.Router()
 
-// Ensure a profile row exists for the current user
-async function ensureProfile(userId: string) {
-  const existing = await prisma.userProfile.findUnique({ where: { userId } })
-  if (existing) return existing
-  return prisma.userProfile.create({ data: { userId } })
-}
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../../uploads')
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: (req, file, cb) => {
+    const userId = (req as AuthenticatedRequest).auth.userId
+    const section = req.body.section
+    const timestamp = Date.now()
+    const ext = path.extname(file.originalname)
+    cb(null, `${userId}_${section}_${timestamp}${ext}`)
+  }
+})
 
-router.get('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 300 * 1024, // 300KB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true)
+    } else {
+      cb(new Error('Only PDF files are allowed'))
+    }
+  }
+})
+
+// Get user profile
+router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    const profile = await prisma.userProfile.findUnique({ where: { userId } })
-    return res.json(profile || {})
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId }
+    })
+    res.json(profile || {})
   } catch (e) {
     console.error('Get profile error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/personal', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Update personal details
+router.put('/personal', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
+    const data = req.body
+    await prisma.userProfile.upsert({
       where: { userId },
-      data: { personalDetails: req.body, updatedAt: new Date() },
+      update: { personalDetails: data, updatedAt: new Date() },
+      create: { userId, personalDetails: data }
     })
-    return res.json({ ok: true, personalDetails: updated.personalDetails })
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update personal error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Update personal details error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/family', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Update family details
+router.put('/family', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
+    const data = req.body
+    await prisma.userProfile.upsert({
       where: { userId },
-      data: { family: req.body, updatedAt: new Date() },
+      update: { family: data, updatedAt: new Date() },
+      create: { userId, family: data }
     })
-    return res.json({ ok: true, family: updated.family })
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update family error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Update family details error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/education', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Update education details
+router.put('/education', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
+    const data = req.body
+    await prisma.userProfile.upsert({
       where: { userId },
-      data: { education: req.body, updatedAt: new Date() },
+      update: { education: data, updatedAt: new Date() },
+      create: { userId, education: data }
     })
-    return res.json({ ok: true, education: updated.education })
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update education error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Update education details error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/medical', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Update medical details
+router.put('/medical', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
+    const data = req.body
+    await prisma.userProfile.upsert({
       where: { userId },
-      data: { medical: req.body, updatedAt: new Date() },
+      update: { medical: data, updatedAt: new Date() },
+      create: { userId, medical: data }
     })
-    return res.json({ ok: true, medical: updated.medical })
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update medical error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Update medical details error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/others', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Update others details
+router.put('/others', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
+    const data = req.body
+    await prisma.userProfile.upsert({
       where: { userId },
-      data: { others: req.body, updatedAt: new Date() },
+      update: { others: data, updatedAt: new Date() },
+      create: { userId, others: data }
     })
-    return res.json({ ok: true, others: updated.others })
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update others error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Update others details error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/leave', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Upload document
+router.post('/documents', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
-      where: { userId },
-      data: { leaveData: req.body, updatedAt: new Date() },
+    const section = req.body.section
+    const file = req.file
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' })
+    }
+
+    if (!section) {
+      return res.status(400).json({ error: 'Section is required' })
+    }
+
+    // Get current documents
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId }
     })
-    return res.json({ ok: true, leave: updated.leaveData })
+
+    const currentDocuments = profile?.documents || {}
+    
+    // Add new document
+    const newDocument = {
+      name: file.originalname,
+      filename: file.filename,
+      size: file.size,
+      uploadedAt: new Date().toISOString(),
+      path: file.path
+    }
+
+    const updatedDocuments = {
+      ...currentDocuments,
+      [section]: newDocument
+    }
+
+    // Update profile with new document
+    await prisma.userProfile.upsert({
+      where: { userId },
+      update: { documents: updatedDocuments, updatedAt: new Date() },
+      create: { userId, documents: updatedDocuments }
+    })
+
+    res.json({ ok: true, document: newDocument })
   } catch (e) {
-    console.error('Update leave error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Upload document error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 
-router.put('/profile/salary', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Remove document
+router.delete('/documents/:section', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    await ensureProfile(userId)
-    const updated = await prisma.userProfile.update({
-      where: { userId },
-      data: { salaryData: req.body, updatedAt: new Date() },
+    const section = req.params.section
+
+    // Get current documents
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId }
     })
-    return res.json({ ok: true, salary: updated.salaryData })
+
+    if (!profile?.documents) {
+      return res.status(404).json({ error: 'No documents found' })
+    }
+
+    const currentDocuments = profile.documents as any
+    const documentToRemove = currentDocuments[section]
+
+    if (!documentToRemove) {
+      return res.status(404).json({ error: 'Document not found' })
+    }
+
+    // Remove file from filesystem
+    try {
+      if (fs.existsSync(documentToRemove.path)) {
+        fs.unlinkSync(documentToRemove.path)
+      }
+    } catch (fileError) {
+      console.error('Error removing file:', fileError)
+    }
+
+    // Remove from database
+    const updatedDocuments = { ...currentDocuments }
+    delete updatedDocuments[section]
+
+    await prisma.userProfile.update({
+      where: { userId },
+      data: { documents: updatedDocuments, updatedAt: new Date() }
+    })
+
+    res.json({ ok: true })
   } catch (e) {
-    console.error('Update salary error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+    console.error('Remove document error:', e)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Download document
+router.get('/documents/:section', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth.userId
+    const section = req.params.section
+
+    // Get document info
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId }
+    })
+
+    if (!profile?.documents) {
+      return res.status(404).json({ error: 'No documents found' })
+    }
+
+    const documents = profile.documents as any
+    const document = documents[section]
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' })
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(document.path)) {
+      return res.status(404).json({ error: 'File not found' })
+    }
+
+    // Send file
+    res.download(document.path, document.name)
+  } catch (e) {
+    console.error('Download document error:', e)
+    res.status(500).json({ error: 'Internal error' })
   }
 })
 

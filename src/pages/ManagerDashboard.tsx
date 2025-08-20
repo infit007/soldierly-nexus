@@ -12,6 +12,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { cn } from '../lib/utils'
 import { useToast } from '../hooks/use-toast'
+import { ResubmissionDialog } from '../components/ResubmissionDialog'
 
 // Types
 type UserRow = { id: string; username: string; email: string; role: string; armyNumber?: string }
@@ -41,6 +42,8 @@ type ReqRow = {
   type: 'LEAVE' | 'OUTPASS' | 'SALARY' | 'PROFILE_UPDATE'
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   data: any
+  adminRemark?: string
+  managerResponse?: string
   createdAt: string
   updatedAt: string
 }
@@ -118,6 +121,7 @@ export default function ManagerDashboard() {
   // Requests list
   const [requests, setRequests] = useState<ReqRow[]>([])
   const [loadingReqs, setLoadingReqs] = useState(false)
+  const [resubmissionDialog, setResubmissionDialog] = useState<{ open: boolean; request: ReqRow | null }>({ open: false, request: null })
   const [selectedUserProfile, setSelectedUserProfile] = useState<UserWithProfile | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -205,6 +209,38 @@ export default function ManagerDashboard() {
       console.error(e)
     } finally {
       setLoadingReqs(false)
+    }
+  }
+
+  const handleResubmit = async (response: string, updatedData?: any) => {
+    const request = resubmissionDialog.request
+    if (!request) return
+
+    try {
+      setSubmitting(true)
+      
+      await apiFetch(`/api/manager/requests/${request.id}/resubmit`, {
+        method: 'POST',
+        body: JSON.stringify({ response, updatedData })
+      })
+
+      toast({
+        title: "Success!",
+        description: "Request resubmitted successfully",
+      })
+
+      await reloadRequests()
+      setResubmissionDialog({ open: false, request: null })
+      
+    } catch (e) {
+      console.error('Resubmit failed', e)
+      toast({
+        title: "Error",
+        description: "Failed to resubmit request",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -780,18 +816,55 @@ export default function ManagerDashboard() {
             <div className="space-y-2">
               {requests.length === 0 && <div className="text-sm text-muted-foreground">No requests yet.</div>}
               {requests.map(r => (
-                <div key={r.id} className="text-sm border rounded p-2 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{r.type} · {r.status}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
+                <div key={r.id} className="text-sm border rounded p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{r.type} · {r.status}</div>
+                      <div className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
+                    </div>
+                    {r.status === 'REJECTED' && r.adminRemark && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setResubmissionDialog({ open: true, request: r })}
+                        disabled={submitting}
+                      >
+                        Respond & Resubmit
+                      </Button>
+                    )}
                   </div>
-                  <pre className="text-xs max-w-[60%] overflow-auto bg-muted p-2 rounded">{JSON.stringify(r.data, null, 2)}</pre>
+                  
+                  {r.status === 'REJECTED' && r.adminRemark && (
+                    <div className="bg-red-50 border border-red-200 rounded p-3">
+                      <div className="font-medium text-red-800 mb-1">Admin Remark:</div>
+                      <div className="text-red-700">{r.adminRemark}</div>
+                    </div>
+                  )}
+                  
+                  {r.status === 'PENDING' && r.managerResponse && (
+                    <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                      <div className="font-medium text-blue-800 mb-1">Your Response:</div>
+                      <div className="text-blue-700">{r.managerResponse}</div>
+                    </div>
+                  )}
+                  
+                  <pre className="text-xs max-w-full overflow-auto bg-muted p-2 rounded">{JSON.stringify(r.data, null, 2)}</pre>
                 </div>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <ResubmissionDialog
+        open={resubmissionDialog.open}
+        onOpenChange={(open) => setResubmissionDialog({ open, request: resubmissionDialog.request })}
+        onResubmit={handleResubmit}
+        loading={submitting}
+        adminRemark={resubmissionDialog.request?.adminRemark || ''}
+        requestType={resubmissionDialog.request?.type || ''}
+        requestData={resubmissionDialog.request?.data || {}}
+      />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
@@ -28,13 +29,15 @@ import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/hooks/use-toast'
+import { RejectionDialog } from '@/components/RejectionDialog'
 
 // Lightweight charts (no external deps)
-function DonutChart({ segments, size = 140, thickness = 22, centerLabel }: {
-  segments: { color: string; value: number }[]
+function DonutChart({ segments, size = 140, thickness = 22, centerLabel, onSegmentClick }: {
+  segments: { color: string; value: number; id?: string }[]
   size?: number
   thickness?: number
   centerLabel?: { top?: string; bottom?: string }
+  onSegmentClick?: (segmentId: string | number, event: React.MouseEvent<SVGPathElement>) => void
 }) {
   // Filter out segments with zero values and ensure we have valid data
   const validSegments = segments.filter(seg => seg.value > 0)
@@ -93,7 +96,19 @@ function DonutChart({ segments, size = 140, thickness = 22, centerLabel }: {
       <svg width={canvas} height={canvas} style={{ overflow: 'visible' }}>
         {/* Track */}
         <circle cx={radius} cy={radius} r={r} stroke="#e5e7eb" strokeWidth={thickness} fill="none" />
-        {validSegments.map((seg, idx) => {
+        {validSegments.length === 1 ? (
+          <circle
+            cx={radius}
+            cy={radius}
+            r={r}
+            stroke={validSegments[0].color}
+            strokeWidth={thickness}
+            fill="none"
+            strokeLinecap="round"
+            onClick={onSegmentClick ? (e) => onSegmentClick(validSegments[0].id ?? 0, e as any) : undefined}
+            style={{ cursor: onSegmentClick ? 'pointer' as const : 'default' }}
+          />
+        ) : validSegments.map((seg, idx) => {
           const start = current
           const segLen = seg.value
           current += segLen
@@ -116,11 +131,13 @@ function DonutChart({ segments, size = 140, thickness = 22, centerLabel }: {
               strokeWidth={thickness}
               fill="none"
               strokeLinecap="round"
+              onClick={onSegmentClick ? (e) => onSegmentClick(seg.id ?? idx, e) : undefined}
+              style={{ cursor: onSegmentClick ? 'pointer' as const : 'default' }}
             />
           )
         })}
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
         {centerLabel?.top && <div className="text-xs text-muted-foreground">{centerLabel.top}</div>}
         {centerLabel?.bottom && <div className="text-base font-semibold">{centerLabel.bottom}</div>}
       </div>
@@ -202,6 +219,8 @@ interface AdminRequestRow {
   type: 'LEAVE' | 'OUTPASS' | 'SALARY' | 'PROFILE_UPDATE'
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   data: any
+  adminRemark?: string
+  managerResponse?: string
   createdAt: string
   updatedAt: string
   requester?: { id: string; username: string; email: string; role: string }
@@ -220,6 +239,19 @@ function RequestSummary({ r }: { r: AdminRequestRow }) {
           {r.targetUser.armyNumber && ` • Army Number: ${r.targetUser.armyNumber}`}
         </div>
       )}
+      
+      {r.status === 'REJECTED' && r.adminRemark && (
+        <div className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded border">
+          <strong>Admin Remark:</strong> {r.adminRemark}
+        </div>
+      )}
+      
+      {r.status === 'PENDING' && r.managerResponse && (
+        <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border">
+          <strong>Manager Response:</strong> {r.managerResponse}
+        </div>
+      )}
+      
       <div>
         {(() => {
           switch (r.type) {
@@ -303,6 +335,8 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const [segmentModal, setSegmentModal] = useState<{ open: boolean; title: string; users: Array<{ name: string; armyNumber?: string | null }> }>({ open: false, title: '', users: [] })
+  const [rejectionDialog, setRejectionDialog] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null })
   const { logout } = useAuth()
   const navigate = useNavigate()
 
@@ -436,11 +470,18 @@ export default function AdminDashboard() {
   }
 
   const rejectRequest = async (id: string) => {
+    setRejectionDialog({ open: true, requestId: id })
+  }
+
+  const handleRejectWithRemark = async (remark: string) => {
+    const requestId = rejectionDialog.requestId
+    if (!requestId) return
+
     try {
       setRefreshing(true)
       
       // Optimistic update - remove from pending requests immediately
-      setRequests(prev => prev.filter(r => r.id !== id))
+      setRequests(prev => prev.filter(r => r.id !== requestId))
       
       // Show success message immediately
       toast({
@@ -449,7 +490,7 @@ export default function AdminDashboard() {
       })
       
       // Make the API call
-      await apiFetch(`/api/admin/requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: null }) })
+      await apiFetch(`/api/admin/requests/${requestId}/reject`, { method: 'POST', body: JSON.stringify({ remark }) })
       
       console.log('Request rejected, refreshing data...')
       
@@ -469,6 +510,9 @@ export default function AdminDashboard() {
       // Force a re-render by updating a timestamp
       setLastUpdate(Date.now())
       setRefreshing(false)
+      
+      // Close the dialog
+      setRejectionDialog({ open: false, requestId: null })
       
     } catch (e) {
       console.error('Reject failed', e)
@@ -608,13 +652,11 @@ export default function AdminDashboard() {
 
           {/* Charts Summary removed per request */}
 
-          {/* Charts and Analytics */}
+          {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="charts">Charts</TabsTrigger>
               <TabsTrigger value="users">User List</TabsTrigger>
-              <TabsTrigger value="userDetails">User Details</TabsTrigger>
               <TabsTrigger value="requests">Requests</TabsTrigger>
             </TabsList>
 
@@ -626,39 +668,7 @@ export default function AdminDashboard() {
                 </div>
               )}
               
-              {/* Requests-centric bar charts */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {(['LEAVE','OUTPASS','SALARY','PROFILE_UPDATE'] as const).map((typeKey) => {
-                  const byType = allRequests.filter(r => r.type === typeKey)
-                  const now = new Date()
-                  const months = Array.from({ length: 6 }).map((_, i) => {
-                    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-                    const label = d.toLocaleDateString('en-US', { month: 'short' })
-                    const value = byType.filter(r => {
-                      const rd = new Date(r.createdAt)
-                      return rd.getFullYear() === d.getFullYear() && rd.getMonth() === d.getMonth()
-                    }).length
-                    return { label, value }
-                  })
-                  const titleMap: Record<typeof typeKey, string> = {
-                    LEAVE: 'Leaves',
-                    OUTPASS: 'Outpasses',
-                    SALARY: 'Salary',
-                    PROFILE_UPDATE: 'Profile Updates'
-                  }
-                  return (
-                    <Card key={typeKey}>
-                      <CardHeader>
-                        <CardTitle className="text-sm font-medium">{titleMap[typeKey]}</CardTitle>
-                        <CardDescription>Last 6 months</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <MiniBarChart data={months} />
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
+              {/* First-row bar graphs removed per request */}
 
               {/* Requests Analytics: four pies and bars */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -667,9 +677,9 @@ export default function AdminDashboard() {
                   const statusCount = (s: 'PENDING'|'APPROVED'|'REJECTED') => byType.filter(r => r.status === s).length
                   
                   const segments = [
-                    { color: '#9ca3af', value: statusCount('PENDING') },
-                    { color: '#22c55e', value: statusCount('APPROVED') },
-                    { color: '#ef4444', value: statusCount('REJECTED') },
+                    { id: 'PENDING', color: '#9ca3af', value: statusCount('PENDING') },
+                    { id: 'APPROVED', color: '#22c55e', value: statusCount('APPROVED') },
+                    { id: 'REJECTED', color: '#ef4444', value: statusCount('REJECTED') },
                   ]
                   
                   // Debug logging for salary chart
@@ -716,6 +726,20 @@ export default function AdminDashboard() {
                               thickness={18}
                               segments={segments}
                               centerLabel={{ top: 'Total', bottom: String(byType.length) }}
+                              onSegmentClick={(segId) => {
+                                const status = String(segId) as 'PENDING'|'APPROVED'|'REJECTED'
+                                const usersInSegment = byType
+                                  .filter(r => r.status === status)
+                                  .map(r => ({
+                                    name: r.targetUser?.username || r.requester?.username || 'Unknown',
+                                    armyNumber: r.targetUser?.armyNumber ?? null,
+                                  }))
+                                setSegmentModal({
+                                  open: true,
+                                  title: `${titleMap[typeKey]} · ${status.charAt(0)}${status.slice(1).toLowerCase()}`,
+                                  users: usersInSegment,
+                                })
+                              }}
                             />
                           ) : (
                             <div className="w-[120px] h-[120px] flex items-center justify-center text-muted-foreground text-sm">
@@ -737,6 +761,27 @@ export default function AdminDashboard() {
                 })}
               </div>
             </TabsContent>
+
+            {/* Segment Users Modal */}
+            <Dialog open={segmentModal.open} onOpenChange={(open) => setSegmentModal(prev => ({ ...prev, open }))}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{segmentModal.title}</DialogTitle>
+                </DialogHeader>
+                {segmentModal.users.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No users found in this segment.</div>
+                ) : (
+                  <div className="max-h-80 overflow-auto divide-y">
+                    {segmentModal.users.map((u, i) => (
+                      <div key={i} className="py-2 flex justify-between text-sm">
+                        <span className="font-medium">{u.name}</span>
+                        <span className="text-muted-foreground">{u.armyNumber ? `Army No: ${u.armyNumber}` : '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {/* Requests Tab */}
             <TabsContent value="requests" className="space-y-4">
@@ -808,48 +853,6 @@ export default function AdminDashboard() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="charts" className="space-y-4">
-              {refreshing && (
-                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                  <span className="text-blue-600 text-sm">Refreshing data...</span>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {(['LEAVE','OUTPASS','SALARY','PROFILE_UPDATE'] as const).map((typeKey) => {
-                  const byType = allRequests.filter(r => r.type === typeKey)
-                  const now = new Date()
-                  const months = Array.from({ length: 6 }).map((_, i) => {
-                    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-                    const label = d.toLocaleDateString('en-US', { month: 'short' })
-                    const value = byType.filter(r => {
-                      const rd = new Date(r.createdAt)
-                      return rd.getFullYear() === d.getFullYear() && rd.getMonth() === d.getMonth()
-                    }).length
-                    return { label, value }
-                  })
-                  const titleMap: Record<typeof typeKey, string> = {
-                    LEAVE: 'Leaves',
-                    OUTPASS: 'Outpasses',
-                    SALARY: 'Salary',
-                    PROFILE_UPDATE: 'Profile Updates'
-                  }
-                  return (
-                    <Card key={typeKey}>
-                      <CardHeader>
-                        <CardTitle className="text-sm font-medium">{titleMap[typeKey]}</CardTitle>
-                        <CardDescription>Last 6 months</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <MiniBarChart data={months} height={200} />
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-            </TabsContent>
-
             <TabsContent value="users" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -863,6 +866,186 @@ export default function AdminDashboard() {
                   {usersLoading ? (
                     <div className="flex items-center justify-center h-32">
                       <div className="text-lg">Loading users...</div>
+                    </div>
+                  ) : selectedUser ? (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+                        <div>
+                          <h3 className="font-semibold mb-2">Basic Information</h3>
+                          <div className="space-y-1 text-sm">
+                            <div><span className="font-medium">Username:</span> {selectedUser.username}</div>
+                            <div><span className="font-medium">Email:</span> {selectedUser.email}</div>
+                            <div><span className="font-medium">Role:</span>
+                              <Badge variant={selectedUser.role === 'ADMIN' ? 'destructive' : 'secondary'} className="ml-2">
+                                {selectedUser.role}
+                              </Badge>
+                            </div>
+                            <div><span className="font-medium">Registered:</span> {formatDate(selectedUser.createdAt)}</div>
+                            {selectedUser.profile?.updatedAt && (
+                              <div><span className="font-medium">Last Updated:</span> {formatDate(selectedUser.profile.updatedAt)}</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <Button
+                            variant="outline"
+                            onClick={() => setSelectedUser(null)}
+                            className="flex items-center gap-2"
+                          >
+                            <Users className="h-4 w-4" />
+                            Back to Users
+                          </Button>
+                        </div>
+                      </div>
+
+                      {selectedUser.profile && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {selectedUser.profile.personalDetails && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <User className="h-4 w-4" />
+                                  Personal Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.personalDetails).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.family && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <Home className="h-4 w-4" />
+                                  Family Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {selectedUser.profile.family.members?.map((member: any, index: number) => (
+                                  <div key={index} className="p-2 border rounded">
+                                    <div className="font-medium mb-1">Member {index + 1}</div>
+                                    {Object.entries(member).map(([key, value]) => (
+                                      <div key={key} className="flex justify-between text-xs">
+                                        <span className="font-medium capitalize">{key}:</span>
+                                        <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.education && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <GraduationCap className="h-4 w-4" />
+                                  Education Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.education).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.medical && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <Heart className="h-4 w-4" />
+                                  Medical Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.medical).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.others && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <FileText className="h-4 w-4" />
+                                  Other Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.others).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.leaveData && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <Clock className="h-4 w-4" />
+                                  Leave Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.leaveData).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {selectedUser.profile.salaryData && (
+                            <Card>
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <DollarSign className="h-4 w-4" />
+                                  Salary Details
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-2 text-sm">
+                                {Object.entries(selectedUser.profile.salaryData).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
+                                  </div>
+                                ))}
+                              </CardContent>
+                            </Card>
+                          )}
+                        </div>
+                      )}
+
+                      {!selectedUser.profile && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>No profile data has been submitted yet.</p>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -890,10 +1073,7 @@ export default function AdminDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => {
-                                setSelectedUser(user)
-                                setActiveTab("userDetails")
-                              }}
+                              onClick={() => setSelectedUser(user)}
                               className="flex items-center gap-2"
                             >
                               <Eye className="h-4 w-4" />
@@ -907,224 +1087,16 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             </TabsContent>
-
-            <TabsContent value="userDetails" className="space-y-4">
-              {selectedUser ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <User className="h-5 w-5" />
-                      {selectedUser.username} - Profile Details
-                    </CardTitle>
-                    <CardDescription>
-                      Complete registration information for {selectedUser.email}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Basic Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
-                      <div>
-                        <h3 className="font-semibold mb-2">Basic Information</h3>
-                        <div className="space-y-1 text-sm">
-                          <div><span className="font-medium">Username:</span> {selectedUser.username}</div>
-                          <div><span className="font-medium">Email:</span> {selectedUser.email}</div>
-                          <div><span className="font-medium">Role:</span> 
-                            <Badge variant={selectedUser.role === 'ADMIN' ? 'destructive' : 'secondary'} className="ml-2">
-                              {selectedUser.role}
-                            </Badge>
-                          </div>
-                          <div><span className="font-medium">Registered:</span> {formatDate(selectedUser.createdAt)}</div>
-                          {selectedUser.profile?.updatedAt && (
-                            <div><span className="font-medium">Last Updated:</span> {formatDate(selectedUser.profile.updatedAt)}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <Button
-                          variant="outline"
-                          onClick={() => setSelectedUser(null)}
-                          className="flex items-center gap-2"
-                        >
-                          <Users className="h-4 w-4" />
-                          Back to Users
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Profile Sections */}
-                    {selectedUser.profile && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Personal Details */}
-                        {selectedUser.profile.personalDetails && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <User className="h-4 w-4" />
-                                Personal Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.personalDetails).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Family Details */}
-                        {selectedUser.profile.family && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <Home className="h-4 w-4" />
-                                Family Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {selectedUser.profile.family.members?.map((member: any, index: number) => (
-                                <div key={index} className="p-2 border rounded">
-                                  <div className="font-medium mb-1">Member {index + 1}</div>
-                                  {Object.entries(member).map(([key, value]) => (
-                                    <div key={key} className="flex justify-between text-xs">
-                                      <span className="font-medium capitalize">{key}:</span>
-                                      <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Education Details */}
-                        {selectedUser.profile.education && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <GraduationCap className="h-4 w-4" />
-                                Education Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.education).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Medical Details */}
-                        {selectedUser.profile.medical && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <Heart className="h-4 w-4" />
-                                Medical Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.medical).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Other Details */}
-                        {selectedUser.profile.others && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <FileText className="h-4 w-4" />
-                                Other Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.others).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Leave Details */}
-                        {selectedUser.profile.leaveData && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <Clock className="h-4 w-4" />
-                                Leave Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.leaveData).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Salary Details */}
-                        {selectedUser.profile.salaryData && (
-                          <Card>
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                <DollarSign className="h-4 w-4" />
-                                Salary Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 text-sm">
-                              {Object.entries(selectedUser.profile.salaryData).map(([key, value]) => (
-                                <div key={key} className="flex justify-between">
-                                  <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
-                                </div>
-                              ))}
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    )}
-
-                    {!selectedUser.profile && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>No profile data has been submitted yet.</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>User Details</CardTitle>
-                    <CardDescription>Select a user from the User List tab to view their complete profile information</CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-center py-8 text-muted-foreground">
-                    <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No user selected</p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
           </Tabs>
         </div>
       </div>
+
+      <RejectionDialog
+        open={rejectionDialog.open}
+        onOpenChange={(open) => setRejectionDialog({ open, requestId: rejectionDialog.requestId })}
+        onReject={handleRejectWithRemark}
+        loading={refreshing}
+      />
     </div>
   )
 }

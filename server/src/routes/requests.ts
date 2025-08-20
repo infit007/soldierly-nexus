@@ -107,6 +107,8 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
         type: true,
         status: true,
         data: true,
+        adminRemark: true,
+        managerResponse: true,
         createdAt: true,
         updatedAt: true,
         requester: { select: { id: true, username: true, email: true, role: true } }
@@ -172,28 +174,64 @@ router.post('/admin/requests/:id/approve', requireAuth, requireRole('ADMIN'), as
   }
 })
 
-// Admin: reject a request with optional reason
+// Admin: reject a request with required remark
 router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params
-  const { reason } = req.body || {}
+  const { remark } = req.body || {}
   try {
     const request = await prisma.request.findUnique({ where: { id } })
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'PENDING') return res.status(400).json({ error: 'Request not pending' })
+    if (!remark || typeof remark !== 'string' || remark.trim().length === 0) {
+      return res.status(400).json({ error: 'Remark is required for rejection' })
+    }
 
     const updated = await prisma.request.update({ 
       where: { id }, 
       data: { 
         status: 'REJECTED', 
+        adminRemark: remark.trim(),
         data: { 
           ...(isObject(request.data as any) ? request.data as any : {}), 
-          rejectionReason: reason || null 
+          rejectionReason: remark.trim() 
         } 
       } 
     })
     res.json({ ok: true, request: updated })
   } catch (e) {
     console.error('Reject request error:', e)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Manager: respond to admin remark and resubmit rejected request
+router.post('/manager/requests/:id/resubmit', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params
+  const { response, updatedData } = req.body || {}
+  try {
+    const request = await prisma.request.findUnique({ where: { id } })
+    if (!request) return res.status(404).json({ error: 'Request not found' })
+    if (request.status !== 'REJECTED') return res.status(400).json({ error: 'Request is not rejected' })
+    if (request.requesterId !== req.auth.userId) return res.status(403).json({ error: 'Not authorized to resubmit this request' })
+    if (!response || typeof response !== 'string' || response.trim().length === 0) {
+      return res.status(400).json({ error: 'Response to admin remark is required' })
+    }
+
+    // Merge updated data with original data if provided
+    const newData = updatedData ? { ...(isObject(request.data as any) ? request.data as any : {}), ...updatedData } : request.data
+
+    const updated = await prisma.request.update({ 
+      where: { id }, 
+      data: { 
+        status: 'PENDING', 
+        managerResponse: response.trim(),
+        data: newData,
+        updatedAt: new Date()
+      } 
+    })
+    res.json({ ok: true, request: updated })
+  } catch (e) {
+    console.error('Resubmit request error:', e)
     res.status(500).json({ error: 'Internal error' })
   }
 })
