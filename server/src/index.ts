@@ -10,29 +10,21 @@ import { prisma } from './db.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
+const NODE_ENV = process.env.NODE_ENV || 'development'
 
 app.use(express.json())
 app.use(cookieParser())
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'https://soldierly-nexus.vercel.app',
-      'https://soldierly-nexus.onrender.com',
-      'http://localhost:8080',
-      'http://localhost:8081'
-    ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+
+// CORS configuration
+// TODO: In production, replace 'origin: true' with specific allowed origins for security
+const corsOptions = {
+  origin: true, // Allow all origins temporarily - replace with specific domains in production
   credentials: true,
-}))
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}
+
+app.use(cors(corsOptions))
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -59,4 +51,5 @@ app.use('/api', requestsRoutes)
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`)
+  console.log(`Environment: ${NODE_ENV}`)
 })

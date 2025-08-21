@@ -159,7 +159,7 @@ router.post('/documents', requireAuth, upload.single('file'), async (req: Authen
       where: { userId }
     })
 
-    const currentDocuments = profile?.documents || {}
+    const currentDocuments = (profile?.documents as Record<string, any>) || {}
     
     // Add new document
     const newDocument = {
