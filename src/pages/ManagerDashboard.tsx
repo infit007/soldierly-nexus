@@ -356,9 +356,62 @@ export default function ManagerDashboard() {
     }
   }
 
+  // Get rejected requests for notification
+  const rejectedRequests = useMemo(() => {
+    return requests.filter(req => req.status === 'REJECTED' && req.adminRemark)
+  }, [requests])
+
   return (
     <div className="container mx-auto p-4 space-y-6">
       <h1 className="text-2xl font-semibold">Manager Dashboard</h1>
+
+      {/* Rejected Requests Notification */}
+      {rejectedRequests.length > 0 && (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-red-800">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              Rejected Requests Requiring Response
+              <span className="ml-auto bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm font-medium">
+                {rejectedRequests.length}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-red-700">
+              The following requests were rejected by admin and require your response:
+            </p>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {rejectedRequests.map((req) => (
+                <div key={req.id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-red-200">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-red-800">{req.type}</span>
+                      <span className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded">
+                        {new Date(req.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="text-sm text-red-700 mb-2">
+                      <strong>Admin Remark:</strong> {req.adminRemark}
+                    </div>
+                    <div className="text-xs text-red-600">
+                      Request ID: {req.id}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-700 border-red-300 hover:bg-red-100 ml-3 flex-shrink-0"
+                    onClick={() => setResubmissionDialog({ open: true, request: req })}
+                  >
+                    Respond & Resubmit
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

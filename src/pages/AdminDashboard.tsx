@@ -650,6 +650,74 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Rejected Requests with Manager Responses Notification */}
+          {(() => {
+            const resubmittedRequests = requests.filter(req => 
+              req.status === 'PENDING' && req.adminRemark && req.managerResponse
+            )
+            return resubmittedRequests.length > 0 ? (
+              <Card className="border-blue-200 bg-blue-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-blue-800">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    Resubmitted Requests Pending Review
+                    <span className="ml-auto bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
+                      {resubmittedRequests.length}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-blue-700">
+                    The following requests were resubmitted by managers with responses to your remarks:
+                  </p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {resubmittedRequests.map((req) => (
+                      <div key={req.id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-blue-800">{req.type}</span>
+                            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                              {new Date(req.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="text-sm text-blue-700 mb-2">
+                            <strong>Your Remark:</strong> {req.adminRemark}
+                          </div>
+                          <div className="text-sm text-blue-700 mb-2">
+                            <strong>Manager Response:</strong> {req.managerResponse}
+                          </div>
+                          <div className="text-xs text-blue-600">
+                            Request ID: {req.id}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 ml-3 flex-shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-green-700 border-green-300 hover:bg-green-100"
+                            onClick={() => handleApprove(req.id)}
+                            disabled={refreshing}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-700 border-red-300 hover:bg-red-100"
+                            onClick={() => setRejectionDialog({ open: true, requestId: req.id })}
+                            disabled={refreshing}
+                          >
+                            Reject Again
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null
+          })()}
+
           {/* Charts Summary removed per request */}
 
           {/* Tabs */}
