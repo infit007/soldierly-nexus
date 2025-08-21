@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const salarySchema = z.object({
   basicPay: z.coerce.number().min(0, "Enter valid amount"),
@@ -36,6 +37,7 @@ export function SalaryForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -51,12 +53,12 @@ export function SalaryForm() {
   useEffect(() => {
     const sub = form.watch((values) => {
       const anyFilled =
-        values.basicPay !== 0 || values.allowances !== 0 || values.deductions !== 0;
+        values.basicPay !== 0 || values.allowances !== 0 || values.deductions !== 0 || customFields.length > 0;
       if (anyFilled) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
-          localStorage.setItem(key, JSON.stringify(values));
+          localStorage.setItem(key, JSON.stringify({ ...values, customFields }));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -64,7 +66,7 @@ export function SalaryForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +75,17 @@ export function SalaryForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.salary) {
           form.reset(profile.salary);
+          if (profile.salary.customFields) setCustomFields(profile.salary.customFields);
           return;
         }
       } catch {}
       const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
       const saved = localStorage.getItem(key);
-      if (saved) form.reset(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        form.reset(parsed);
+        if (parsed.customFields) setCustomFields(parsed.customFields);
+      }
     }
     load();
     return () => { cancelled = true };
@@ -87,9 +94,9 @@ export function SalaryForm() {
   const onSubmit = async (data: SalaryFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/salary", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/salary", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `salaryDetails:${user.id}` : "salaryDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({ title: "Success", description: "Salary details saved" });
     } catch {
       toast({
@@ -150,6 +157,14 @@ export function SalaryForm() {
                 </FormItem>
               )}
             />
+
+            <CustomFields
+              title="Additional Salary Fields"
+              description="Add extra salary-related information"
+              value={customFields}
+              onChange={setCustomFields}
+            />
+
             <div className="flex justify-end">
               <Button type="submit" disabled={isLoading} className="min-w-32">
                 {isLoading ? (

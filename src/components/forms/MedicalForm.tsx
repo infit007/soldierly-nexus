@@ -25,6 +25,7 @@ import { Loader2, Save, Stethoscope } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const medicalSchema = z.object({
   bloodGroup: z.string().optional(),
@@ -45,6 +46,7 @@ export function MedicalForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const [documents, setDocuments] = useState<any>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -74,6 +76,7 @@ export function MedicalForm() {
       if (profile?.documents?.medical) {
         setDocuments(prev => ({ ...prev, medical: profile.documents.medical }));
       }
+      if (profile?.medical?.customFields) setCustomFields(profile.medical.customFields);
     } catch (error) {
       console.error("Failed to load documents:", error);
     }
@@ -113,7 +116,7 @@ export function MedicalForm() {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
-          localStorage.setItem(key, JSON.stringify(data));
+          localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -121,7 +124,7 @@ export function MedicalForm() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,12 +133,17 @@ export function MedicalForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.medical) {
           form.reset(profile.medical);
+          if (profile.medical.customFields) setCustomFields(profile.medical.customFields);
           return;
         }
       } catch {}
       const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
       const saved = localStorage.getItem(key);
-      if (saved) form.reset(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        form.reset(parsed);
+        if (parsed.customFields) setCustomFields(parsed.customFields);
+      }
     }
     load();
     return () => { cancelled = true };
@@ -144,9 +152,9 @@ export function MedicalForm() {
   const onSubmit = async (data: MedicalFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/medical", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/medical", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `medicalDetails:${user.id}` : "medicalDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({
         title: "Success",
         description: "Medical details saved successfully",
@@ -320,6 +328,13 @@ export function MedicalForm() {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <CustomFields
+                title="Additional Medical Fields"
+                description="Add extra medical information (e.g., Physician Phone)"
+                value={customFields}
+                onChange={setCustomFields}
               />
 
               <div className="flex justify-end">

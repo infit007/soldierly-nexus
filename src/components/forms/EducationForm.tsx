@@ -24,10 +24,11 @@ import { Loader2, Save, GraduationCap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const yearSchema = z
   .string()
-  .regex(/^[0-9]{4}$/, { message: "Enter a valid year" })
+  .regex(/^[0-9]{4}$/i, { message: "Enter a valid year" })
   .optional()
   .or(z.literal(""));
 
@@ -62,6 +63,7 @@ export function EducationForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const [documents, setDocuments] = useState<any>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -98,6 +100,7 @@ export function EducationForm() {
       if (profile?.documents?.education) {
         setDocuments(prev => ({ ...prev, education: profile.documents.education }));
       }
+      if (profile?.education?.customFields) setCustomFields(profile.education.customFields);
     } catch (error) {
       console.error("Failed to load documents:", error);
     }
@@ -137,7 +140,7 @@ export function EducationForm() {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           const key = user ? `educationDetails:${user.id}` : "educationDetails";
-          localStorage.setItem(key, JSON.stringify(data));
+          localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -145,7 +148,7 @@ export function EducationForm() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,12 +157,17 @@ export function EducationForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.education) {
           form.reset(profile.education);
+          if (profile.education.customFields) setCustomFields(profile.education.customFields);
           return;
         }
       } catch {}
       const key = user ? `educationDetails:${user.id}` : "educationDetails";
       const saved = localStorage.getItem(key);
-      if (saved) form.reset(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        form.reset(parsed);
+        if (parsed.customFields) setCustomFields(parsed.customFields);
+      }
     }
     load();
     return () => { cancelled = true };
@@ -168,9 +176,9 @@ export function EducationForm() {
   const onSubmit = async (data: EducationFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/education", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/education", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `educationDetails:${user.id}` : "educationDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({
         title: "Success",
         description: "Education details saved",
@@ -427,6 +435,13 @@ export function EducationForm() {
                 />
               </div>
             </section>
+
+            <CustomFields
+              title="Additional Education Fields"
+              description="Add extra info related to education"
+              value={customFields}
+              onChange={setCustomFields}
+            />
 
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">

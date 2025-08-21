@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const leaveSchema = z.object({
   annualEntitlement: z.coerce.number().min(0, "Required"),
@@ -36,6 +37,7 @@ export function LeaveForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -50,11 +52,11 @@ export function LeaveForm() {
 
   useEffect(() => {
     const sub = form.watch((vals) => {
-      if (vals.annualEntitlement !== 0 || vals.annualTaken !== 0 || vals.sickTaken !== 0) {
+      if (vals.annualEntitlement !== 0 || vals.annualTaken !== 0 || vals.sickTaken !== 0 || customFields.length > 0) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
-          localStorage.setItem(key, JSON.stringify(vals));
+          localStorage.setItem(key, JSON.stringify({ ...vals, customFields }));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -62,7 +64,7 @@ export function LeaveForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,12 +73,17 @@ export function LeaveForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.leave) {
           form.reset(profile.leave);
+          if (profile.leave.customFields) setCustomFields(profile.leave.customFields);
           return;
         }
       } catch {}
       const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
       const saved = localStorage.getItem(key);
-      if (saved) form.reset(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        form.reset(parsed);
+        if (parsed.customFields) setCustomFields(parsed.customFields);
+      }
     }
     load();
     return () => { cancelled = true };
@@ -85,9 +92,9 @@ export function LeaveForm() {
   const onSubmit = async (data: LeaveFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/leave", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/leave", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `leaveDetails:${user.id}` : "leaveDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({ title: "Success", description: "Leave details saved" });
     } catch {
       toast({
@@ -148,6 +155,14 @@ export function LeaveForm() {
                 </FormItem>
               )}
             />
+
+            <CustomFields
+              title="Additional Leave Fields"
+              description="Add extra leave-related information"
+              value={customFields}
+              onChange={setCustomFields}
+            />
+
             <div className="flex justify-end">
               <Button type="submit" disabled={isLoading} className="min-w-32">
                 {isLoading ? (

@@ -12,6 +12,7 @@ import { Loader2, Save, Users, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const familyMemberSchema = z.object({
   Name: z.string().min(2, "Name must be at least 2 characters"),
@@ -38,6 +39,7 @@ export function FamilyForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const [documents, setDocuments] = useState<any>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -66,6 +68,7 @@ export function FamilyForm() {
       if (profile?.documents?.family) {
         setDocuments(prev => ({ ...prev, family: profile.documents.family }));
       }
+      if (profile?.family?.customFields) setCustomFields(profile.family.customFields);
     } catch (error) {
       console.error("Failed to load documents:", error);
     }
@@ -105,7 +108,7 @@ export function FamilyForm() {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           const key = user ? `familyDetails:${user.id}` : "familyDetails";
-          localStorage.setItem(key, JSON.stringify(values));
+          localStorage.setItem(key, JSON.stringify({ ...values, customFields }));
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
         }, 1000);
@@ -113,7 +116,7 @@ export function FamilyForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,12 +125,17 @@ export function FamilyForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.family) {
           form.reset(profile.family);
+          if (profile.family.customFields) setCustomFields(profile.family.customFields);
           return;
         }
       } catch {}
       const key = user ? `familyDetails:${user.id}` : "familyDetails";
       const saved = localStorage.getItem(key);
-      if (saved) form.reset(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        form.reset(parsed);
+        if (parsed.customFields) setCustomFields(parsed.customFields);
+      }
     }
     load();
     return () => { cancelled = true };
@@ -136,9 +144,9 @@ export function FamilyForm() {
   const onSubmit = async (data: FamilyFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/family", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/family", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `familyDetails:${user.id}` : "familyDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({
         title: "Success",
         description: "Family details saved successfully",
@@ -292,6 +300,13 @@ export function FamilyForm() {
                 <Plus className="h-4 w-4 mr-2" />
                 Add Family Member
               </Button>
+
+              <CustomFields
+                title="Additional Family Fields"
+                description="Add extra info related to family (e.g., Guardian Phone)"
+                value={customFields}
+                onChange={setCustomFields}
+              />
 
               <div className="flex justify-end">
                 <Button type="submit" disabled={isLoading} className="min-w-32">

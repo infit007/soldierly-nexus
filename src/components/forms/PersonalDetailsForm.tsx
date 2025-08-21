@@ -12,6 +12,7 @@ import { Loader2, Save, User } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 // Custom validation function for date gap
 const validateDateGap = (dateOfBirth: string, dateOfJoining: string) => {
@@ -74,6 +75,7 @@ export function PersonalDetailsForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [documents, setDocuments] = useState<any>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -167,6 +169,7 @@ export function PersonalDetailsForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.personalDetails) {
           form.reset(profile.personalDetails);
+          setCustomFields(Array.isArray(profile.personalDetails.customFields) ? profile.personalDetails.customFields : []);
           return;
         }
       } catch {}
@@ -176,6 +179,7 @@ export function PersonalDetailsForm() {
         if (savedData) {
           const parsed = JSON.parse(savedData);
           form.reset(parsed);
+          setCustomFields(Array.isArray(parsed.customFields) ? parsed.customFields : []);
         }
       } catch {}
     }
@@ -186,9 +190,9 @@ export function PersonalDetailsForm() {
   const onSubmit = async (data: PersonalDetailsFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/personal", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/personal", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `personalDetails:${user.id}` : "personalDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({
         title: "Success",
         description: "Personal details saved successfully",
@@ -406,6 +410,13 @@ export function PersonalDetailsForm() {
                   />
                 </CardContent>
               </Card>
+
+              <CustomFields
+                title="Additional Fields"
+                description="Add extra info (e.g., Alternate Phone, Secondary Email)"
+                value={customFields}
+                onChange={setCustomFields}
+              />
 
               <div className="flex justify-end">
                 <Button type="submit" disabled={isLoading} className="min-w-32">

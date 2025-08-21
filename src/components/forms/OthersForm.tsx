@@ -13,6 +13,7 @@ import { Loader2, Save, FileText } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { CustomFields, type CustomField } from "@/components/CustomFields";
 
 const othersSchema = z.object({
   livingStatus: z.enum(["Single", "Married", "Divorced", "Widowed"]).optional(),
@@ -26,6 +27,7 @@ export function OthersForm() {
   const [autoSaveStatus, setAutoSaveStatus] =
     useState<"idle" | "saving" | "saved">("idle");
   const [documents, setDocuments] = useState<any>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -48,6 +50,7 @@ export function OthersForm() {
       if (profile?.documents?.others) {
         setDocuments(prev => ({ ...prev, others: profile.documents.others }));
       }
+      if (profile?.others?.customFields) setCustomFields(profile.others.customFields);
     } catch (error) {
       console.error("Failed to load documents:", error);
     }
@@ -84,12 +87,12 @@ export function OthersForm() {
   useEffect(() => {
     const sub = form.watch((vals) => {
       // autosave when either field has data
-      if ((vals as any).livingStatus || vals.remarks !== "") {
+      if ((vals as any).livingStatus || vals.remarks !== "" || customFields.length > 0) {
         setAutoSaveStatus("saving");
         const timer = setTimeout(() => {
           try {
             const key = user ? `otherDetails:${user.id}` : "otherDetails";
-            localStorage.setItem(key, JSON.stringify(vals));
+            localStorage.setItem(key, JSON.stringify({ ...vals, customFields }));
           } catch {}
           setAutoSaveStatus("saved");
           setTimeout(() => setAutoSaveStatus("idle"), 2000);
@@ -98,7 +101,7 @@ export function OthersForm() {
       }
     });
     return () => sub.unsubscribe();
-  }, [form, user]);
+  }, [form, user, customFields]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,13 +110,18 @@ export function OthersForm() {
         const profile = await apiFetch<any>("/api/profile");
         if (!cancelled && profile?.others) {
           form.reset(profile.others);
+          if (profile.others.customFields) setCustomFields(profile.others.customFields);
           return;
         }
       } catch {}
       const key = user ? `otherDetails:${user.id}` : "otherDetails";
       const saved = localStorage.getItem(key);
       if (saved) {
-        try { form.reset(JSON.parse(saved)); } catch {}
+        try {
+          const parsed = JSON.parse(saved);
+          form.reset(parsed);
+          if (parsed.customFields) setCustomFields(parsed.customFields);
+        } catch {}
       }
     }
     load();
@@ -123,9 +131,9 @@ export function OthersForm() {
   const onSubmit = async (data: OthersFormData) => {
     setIsLoading(true);
     try {
-      await apiFetch("/api/profile/others", { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch("/api/profile/others", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
       const key = user ? `otherDetails:${user.id}` : "otherDetails";
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
       toast({ title: "Success", description: "Details saved successfully" });
     } catch (error) {
       toast({
@@ -206,6 +214,13 @@ export function OthersForm() {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <CustomFields
+                title="Additional Other Fields"
+                description="Add extra info (e.g., Alternate Phone)"
+                value={customFields}
+                onChange={setCustomFields}
               />
 
               <div className="flex justify-end">
