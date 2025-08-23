@@ -6,36 +6,96 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
-import { PersonalDetails, Family, Education, MedicalRecord, Others } from '../types/profile'
 import { Check, ChevronsUpDown, Search } from 'lucide-react'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { cn } from '../lib/utils'
 import { useToast } from '../hooks/use-toast'
 import { ResubmissionDialog } from '../components/ResubmissionDialog'
 
+// Interactive Pie Chart Component
+function PieChart({ data, size = 200, onSegmentClick }: { 
+  data: { label: string; value: number; color: string; status: string }[]
+  size?: number
+  onSegmentClick?: (status: string) => void
+}) {
+  const total = data.reduce((sum, item) => sum + item.value, 0)
+  if (total === 0) {
+    return (
+      <div className="flex items-center justify-center" style={{ width: size, height: size }}>
+        <div className="text-center text-muted-foreground">
+          <div className="text-sm">No data</div>
+        </div>
+      </div>
+    )
+  }
+
+  let currentAngle = 0
+  const radius = size / 2 - 10
+
+  const handleSegmentClick = (status: string, label: string, value: number) => {
+    console.log('Pie chart segment clicked:', status, value, label)
+    if (onSegmentClick) {
+      onSegmentClick(status)
+    }
+  }
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        {data.map((item, index) => {
+          const percentage = item.value / total
+          const angle = percentage * 360
+          const startAngle = currentAngle
+          currentAngle += angle
+
+          const x1 = size / 2 + radius * Math.cos((startAngle * Math.PI) / 180)
+          const y1 = size / 2 + radius * Math.sin((startAngle * Math.PI) / 180)
+          const x2 = size / 2 + radius * Math.cos((currentAngle * Math.PI) / 180)
+          const y2 = size / 2 + radius * Math.sin((currentAngle * Math.PI) / 180)
+
+          const largeArcFlag = angle > 180 ? 1 : 0
+
+          return (
+            <g key={index}>
+              <path
+                d={`M ${size / 2} ${size / 2} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`}
+                fill={item.color}
+                stroke="white"
+                strokeWidth="2"
+                style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' }}
+              />
+              <path
+                d={`M ${size / 2} ${size / 2} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`}
+                fill="transparent"
+                stroke="transparent"
+                strokeWidth="0"
+                className="cursor-pointer"
+                onClick={() => handleSegmentClick(item.status, item.label, item.value)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '0.8'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1'
+                }}
+              />
+            </g>
+          )
+        })}
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="text-center">
+          <div className="text-2xl font-bold">{total}</div>
+          <div className="text-sm text-muted-foreground">Total</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Types
 type UserRow = { id: string; username: string; email: string; role: string; armyNumber?: string }
-
-type UserProfile = {
-  personalDetails?: any
-  family?: any
-  education?: any
-  medical?: any
-  others?: any
-  leaveData?: any
-  salaryData?: any
-  updatedAt?: string
-}
-
-type UserWithProfile = {
-  id: string
-  username: string
-  email: string
-  role: string
-  armyNumber?: string
-  profile: UserProfile | null
-}
 
 type ReqRow = {
   id: string
@@ -50,58 +110,17 @@ type ReqRow = {
 
 export default function ManagerDashboard() {
   const { toast } = useToast()
+  const [submitting, setSubmitting] = useState(false)
+
+  // User selection state
   const [users, setUsers] = useState<UserRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<string>('')
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [userComboboxOpen, setUserComboboxOpen] = useState(false)
 
   // Profile edit state
   const [section, setSection] = useState<'personal'|'family'|'education'|'medical'|'others'>('personal')
   const [sectionJson, setSectionJson] = useState<string>('{}')
-  const fillTemplate = () => {
-    let template: PersonalDetails | Family | Education | MedicalRecord | Others = {}
-    switch (section) {
-      case 'personal':
-        template = {
-          fullName: selectedUser?.username || '',
-          rank: '',
-          serviceNumber: '',
-          phone: '',
-          address: '',
-          email: selectedUser?.email || ''
-        } as PersonalDetails
-        break
-      case 'family':
-        template = {
-          members: [
-            { name: '', relation: 'Spouse' },
-            { name: '', relation: 'Child' }
-          ],
-          dependentsCount: 0
-        } as Family
-        break
-      case 'education':
-        template = {
-          highestQualification: '',
-          entries: [
-            { institution: '', degree: '', fieldOfStudy: '', startYear: 0, endYear: 0 }
-          ]
-        } as Education
-        break
-      case 'medical':
-        template = {
-          conditions: [],
-          medications: [],
-          allergies: [],
-          lastCheckupDate: ''
-        } as MedicalRecord
-        break
-      case 'others':
-        template = { notes: '' } as Others
-        break
-    }
-    setSectionJson(JSON.stringify(template, null, 2))
-  }
 
   // Leave
   const [leaveReason, setLeaveReason] = useState('')
@@ -122,11 +141,8 @@ export default function ManagerDashboard() {
   const [requests, setRequests] = useState<ReqRow[]>([])
   const [loadingReqs, setLoadingReqs] = useState(false)
   const [resubmissionDialog, setResubmissionDialog] = useState<{ open: boolean; request: ReqRow | null }>({ open: false, request: null })
-  const [selectedUserProfile, setSelectedUserProfile] = useState<UserWithProfile | null>(null)
-  const [loadingProfile, setLoadingProfile] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [userComboboxOpen, setUserComboboxOpen] = useState(false)
 
+  // Load users on component mount
   useEffect(() => {
     const load = async () => {
       setLoadingUsers(true)
@@ -145,60 +161,10 @@ export default function ManagerDashboard() {
 
   const selectedUser = useMemo(() => users.find(u => u.id === selectedUserId), [users, selectedUserId])
   
-  const filteredUsers = useMemo(() => {
-    if (!searchTerm) return users
-    const term = searchTerm.toLowerCase().trim()
-    
-    // Enhanced search with multiple criteria
-    return users.filter(user => {
-      // Search by army number (exact or partial)
-      if (user.armyNumber && user.armyNumber.toLowerCase().includes(term)) {
-        return true
-      }
-      
-      // Search by username (exact or partial)
-      if (user.username.toLowerCase().includes(term)) {
-        return true
-      }
-      
-      // Search by email (exact or partial)
-      if (user.email.toLowerCase().includes(term)) {
-        return true
-      }
-      
-      // Search by role (exact match)
-      if (user.role.toLowerCase() === term) {
-        return true
-      }
-      
-      // Search by partial army number (e.g., "1001" for "ARMY-2025-1001")
-      if (user.armyNumber && user.armyNumber.includes(term)) {
-        return true
-      }
-      
-      return false
-    })
-  }, [users, searchTerm])
+  // Notification tracking
+  const [seenNotifications, setSeenNotifications] = useState<Set<string>>(new Set())
 
-  // Fetch live profile of the selected user so manager sees latest user-panel updates
-  const fetchProfile = async () => {
-    if (!selectedUserId) return
-    setLoadingProfile(true)
-    try {
-      const data = await apiFetch<UserWithProfile>(`/api/manager/users/${selectedUserId}/profile`)
-      setSelectedUserProfile(data)
-    } catch (e) {
-      console.error(e)
-      setSelectedUserProfile(null)
-    } finally {
-      setLoadingProfile(false)
-    }
-  }
 
-  useEffect(() => {
-    fetchProfile()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUserId])
 
   const reloadRequests = async () => {
     setLoadingReqs(true)
@@ -249,14 +215,111 @@ export default function ManagerDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const ensureUser = () => {
-    if (!selectedUserId) throw new Error('Please select a user')
+
+
+  // Get rejected requests for notification (excluding seen ones)
+  const rejectedRequests = useMemo(() => {
+    return requests.filter(req => 
+      req.status === 'REJECTED' && 
+      req.adminRemark && 
+      !seenNotifications.has(req.id)
+    )
+  }, [requests, seenNotifications])
+
+  // Mark notification as seen
+  const markNotificationAsSeen = (requestId: string) => {
+    setSeenNotifications(prev => new Set([...prev, requestId]))
+  }
+
+  // Mark all notifications as seen
+  const markAllNotificationsAsSeen = () => {
+    const newSeenSet = new Set(seenNotifications)
+    rejectedRequests.forEach(req => newSeenSet.add(req.id))
+    setSeenNotifications(newSeenSet)
+  }
+
+  // Calculate request statistics for pie chart
+  const requestStats = useMemo(() => {
+    const approved = requests.filter(req => req.status === 'APPROVED').length
+    const rejected = requests.filter(req => req.status === 'REJECTED').length
+    const pending = requests.filter(req => req.status === 'PENDING').length
+
+    return [
+      { label: 'Approved', value: approved, color: '#10b981', status: 'APPROVED' }, // green
+      { label: 'Rejected', value: rejected, color: '#ef4444', status: 'REJECTED' }, // red
+      { label: 'Pending', value: pending, color: '#f59e0b', status: 'PENDING' }   // amber
+    ]
+  }, [requests])
+
+  // State for showing request details modal
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
+  const [showRequestDetails, setShowRequestDetails] = useState(false)
+
+  // Handle pie chart segment click
+  const handleSegmentClick = (status: string) => {
+    console.log('handleSegmentClick called with status:', status)
+    setSelectedStatus(status)
+    setShowRequestDetails(true)
+  }
+
+  // Helper functions
+  const fillTemplate = () => {
+    let template: any = {}
+    switch (section) {
+      case 'personal':
+        template = {
+          fullName: selectedUser?.username || '',
+          rank: '',
+          serviceNumber: '',
+          phone: '',
+          address: '',
+          email: selectedUser?.email || ''
+        }
+        break
+      case 'family':
+        template = {
+          members: [
+            { name: '', relation: 'Spouse' },
+            { name: '', relation: 'Child' }
+          ],
+          dependentsCount: 0
+        }
+        break
+      case 'education':
+        template = {
+          highestQualification: '',
+          entries: [
+            { institution: '', degree: '', fieldOfStudy: '', startYear: 0, endYear: 0 }
+          ]
+        }
+        break
+      case 'medical':
+        template = {
+          conditions: [],
+          medications: [],
+          allergies: [],
+          lastCheckupDate: ''
+        }
+        break
+      case 'others':
+        template = { notes: '' }
+        break
+    }
+    setSectionJson(JSON.stringify(template, null, 2))
   }
 
   const submitProfileEdit = async () => {
+    if (!selectedUserId) {
+      toast({
+        title: "Error",
+        description: "Please select a user first",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setSubmitting(true)
     try {
-      ensureUser()
       let parsed: any = {}
       try { parsed = sectionJson ? JSON.parse(sectionJson) : {} } catch {
         throw new Error('Profile data must be valid JSON')
@@ -282,9 +345,17 @@ export default function ManagerDashboard() {
   }
 
   const submitLeave = async () => {
+    if (!selectedUserId) {
+      toast({
+        title: "Error",
+        description: "Please select a user first",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setSubmitting(true)
     try {
-      ensureUser()
       await apiFetch('/api/manager/requests/leave', {
         method: 'POST',
         body: JSON.stringify({ userId: selectedUserId, leave: { reason: leaveReason, startDate: leaveStart, endDate: leaveEnd } })
@@ -306,9 +377,17 @@ export default function ManagerDashboard() {
   }
 
   const submitOutpass = async () => {
+    if (!selectedUserId) {
+      toast({
+        title: "Error",
+        description: "Please select a user first",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setSubmitting(true)
     try {
-      ensureUser()
       await apiFetch('/api/manager/requests/outpass', {
         method: 'POST',
         body: JSON.stringify({ userId: selectedUserId, outpass: { purpose: outpassPurpose, from: outpassFrom, to: outpassTo } })
@@ -330,9 +409,17 @@ export default function ManagerDashboard() {
   }
 
   const submitSalary = async () => {
+    if (!selectedUserId) {
+      toast({
+        title: "Error",
+        description: "Please select a user first",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setSubmitting(true)
     try {
-      ensureUser()
       const base = salaryBase ? Number(salaryBase) : undefined
       const allowance = salaryAllowance ? Number(salaryAllowance) : undefined
       const bonus = salaryBonus ? Number(salaryBonus) : undefined
@@ -353,13 +440,8 @@ export default function ManagerDashboard() {
       })
     } finally {
       setSubmitting(false)
+      }
     }
-  }
-
-  // Get rejected requests for notification
-  const rejectedRequests = useMemo(() => {
-    return requests.filter(req => req.status === 'REJECTED' && req.adminRemark)
-  }, [requests])
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -371,16 +453,26 @@ export default function ManagerDashboard() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-red-800">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              Rejected Requests Requiring Response
+              New Rejected Requests
               <span className="ml-auto bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm font-medium">
                 {rejectedRequests.length}
               </span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-red-700">
-              The following requests were rejected by admin and require your response:
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-red-700">
+                The following requests were rejected by admin and require your attention:
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-700 border-red-300 hover:bg-red-100"
+                onClick={markAllNotificationsAsSeen}
+              >
+                Mark All as Seen
+              </Button>
+            </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {rejectedRequests.map((req) => (
                 <div key={req.id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-red-200">
@@ -402,9 +494,9 @@ export default function ManagerDashboard() {
                     size="sm"
                     variant="outline"
                     className="text-red-700 border-red-300 hover:bg-red-100 ml-3 flex-shrink-0"
-                    onClick={() => setResubmissionDialog({ open: true, request: req })}
+                    onClick={() => markNotificationAsSeen(req.id)}
                   >
-                    Respond & Resubmit
+                    Mark as Seen
                   </Button>
                 </div>
               ))}
@@ -439,6 +531,96 @@ export default function ManagerDashboard() {
         </Card>
       </div>
 
+      {/* Request Statistics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Statistics</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center p-6">
+            <PieChart data={requestStats} size={250} onSegmentClick={handleSegmentClick} />
+            <div className="mt-4 text-center">
+              <p className="text-sm text-muted-foreground mb-2">💡 Click on pie chart segments to see details</p>
+              <div className="flex items-center justify-center gap-4 text-xs mb-3">
+                {requestStats.map((stat) => (
+                  <div key={stat.status} className="flex items-center gap-1">
+                    <div 
+                      className="w-3 h-3 rounded-full cursor-pointer hover:scale-110 transition-transform"
+                      style={{ backgroundColor: stat.color }}
+                      onClick={() => handleSegmentClick(stat.status)}
+                    />
+                    <span className="text-muted-foreground">{stat.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-center gap-2 text-xs">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => handleSegmentClick('APPROVED')}
+                  className="text-green-600 border-green-300 hover:bg-green-50"
+                >
+                  Test Approved
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => handleSegmentClick('REJECTED')}
+                  className="text-red-600 border-red-300 hover:bg-red-50"
+                >
+                  Test Rejected
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => handleSegmentClick('PENDING')}
+                  className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                >
+                  Test Pending
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {requestStats.find(s => s.label === 'Approved')?.value || 0}
+                </div>
+                <div className="text-sm text-muted-foreground">Approved</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">
+                  {requestStats.find(s => s.label === 'Rejected')?.value || 0}
+                </div>
+                <div className="text-sm text-muted-foreground">Rejected</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-amber-600">
+                  {requestStats.find(s => s.label === 'Pending')?.value || 0}
+                </div>
+                <div className="text-sm text-muted-foreground">Pending</div>
+              </div>
+            </div>
+            <div className="pt-4 border-t">
+              <div className="text-center">
+                <div className="text-3xl font-bold">
+                  {requests.length}
+                </div>
+                <div className="text-sm text-muted-foreground">Total Requests</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Select a User */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -452,87 +634,87 @@ export default function ManagerDashboard() {
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1 min-w-0">
               <Label className="text-sm font-medium mb-2 block">User</Label>
-            <Popover open={userComboboxOpen} onOpenChange={setUserComboboxOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={userComboboxOpen}
-                  className="w-full justify-between h-10 px-3"
-                  disabled={loadingUsers}
-                >
-                  {loadingUsers ? (
-                    'Loading users...'
-                  ) : selectedUserId ? (
-                    <>
-                      {selectedUser?.username} ({selectedUser?.email})
-                      {selectedUser?.armyNumber && ` • ${selectedUser.armyNumber}`}
-                    </>
-                  ) : (
-                    'Select user...'
-                  )}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[500px] p-0" align="start">
-                <Command>
-                  <CommandInput 
-                    placeholder="Search users by name, email, or army number..." 
-                    className="h-10 border-0 focus:ring-0"
-                  />
-                  <CommandList className="max-h-[300px]">
-                    <CommandEmpty>
-                      <div className="text-center py-6">
-                        <Search className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">No users found</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Try searching by username, email, or army number
-                        </p>
-                      </div>
-                    </CommandEmpty>
-                    <CommandGroup>
-                      <div className="px-3 py-2 text-xs text-muted-foreground border-b bg-muted/30">
-                        {users.length} users available • Use ↑↓ to navigate, Enter to select
-                      </div>
-                      {users.map((user) => (
-                        <CommandItem
-                          key={user.id}
-                          value={`${user.username} ${user.email} ${user.armyNumber || ''}`}
-                          onSelect={() => {
-                            setSelectedUserId(user.id)
-                            setUserComboboxOpen(false)
-                          }}
-                          className="cursor-pointer px-3 py-2"
-                        >
-                          <Check
-                            className={cn(
-                              "mr-3 h-4 w-4",
-                              selectedUserId === user.id ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          <div className="flex flex-col flex-1 min-w-0">
-                            <span className="font-medium truncate">
-                              {user.username}
-                            </span>
-                            <span className="text-xs text-muted-foreground truncate">
-                              {user.email}
-                            </span>
-                            {user.armyNumber && (
-                              <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded mt-1 inline-block">
-                                {user.armyNumber}
+              <Popover open={userComboboxOpen} onOpenChange={setUserComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={userComboboxOpen}
+                    className="w-full justify-between h-10 px-3"
+                    disabled={loadingUsers}
+                  >
+                    {loadingUsers ? (
+                      'Loading users...'
+                    ) : selectedUserId ? (
+                      <>
+                        {selectedUser?.username} ({selectedUser?.email})
+                        {selectedUser?.armyNumber && ` • ${selectedUser.armyNumber}`}
+                      </>
+                    ) : (
+                      'Select user...'
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[500px] p-0" align="start">
+                  <Command>
+                    <CommandInput 
+                      placeholder="Search users by name, email, or army number..." 
+                      className="h-10 border-0 focus:ring-0"
+                    />
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty>
+                        <div className="text-center py-6">
+                          <Search className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">No users found</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Try searching by username, email, or army number
+                          </p>
+                        </div>
+                      </CommandEmpty>
+                      <CommandGroup>
+                        <div className="px-3 py-2 text-xs text-muted-foreground border-b bg-muted/30">
+                          {users.length} users available • Use ↑↓ to navigate, Enter to select
+                        </div>
+                        {users.map((user) => (
+                          <CommandItem
+                            key={user.id}
+                            value={`${user.username} ${user.email} ${user.armyNumber || ''}`}
+                            onSelect={() => {
+                              setSelectedUserId(user.id)
+                              setUserComboboxOpen(false)
+                            }}
+                            className="cursor-pointer px-3 py-2"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-3 h-4 w-4",
+                                selectedUserId === user.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="font-medium truncate">
+                                {user.username}
                               </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground capitalize ml-2">
-                            {user.role}
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+                              <span className="text-xs text-muted-foreground truncate">
+                                {user.email}
+                              </span>
+                              {user.armyNumber && (
+                                <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded mt-1 inline-block">
+                                  {user.armyNumber}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground capitalize ml-2">
+                              {user.role}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           {selectedUser && (
@@ -558,198 +740,11 @@ export default function ManagerDashboard() {
         </CardContent>
       </Card>
 
-      {/* All Users with Army Numbers */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Users</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {/* Enhanced Search Section */}
-          <div className="mb-6 space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <Label htmlFor="search-users" className="text-sm font-medium mb-2 block">
-                  Search Users
-                </Label>
-                <Input
-                  id="search-users"
-                  placeholder="Search by army number, username, or email..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full max-w-lg"
-                />
-              </div>
-              {searchTerm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSearchTerm('')}
-                  className="mt-6"
-                >
-                  Clear Search
-                </Button>
-              )}
-            </div>
-            
-            {/* Search Results Summary */}
-            {searchTerm && (
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span>🔍</span>
-                  <span>Search results for: <strong>"{searchTerm}"</strong></span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span>📊</span>
-                  <span>Showing {filteredUsers.length} of {users.length} users</span>
-                </div>
-                {filteredUsers.length === 0 && (
-                  <div className="text-amber-600 font-medium">
-                    No users found matching your search
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Quick Search Examples */}
-            {!searchTerm && (
-              <div className="text-xs text-muted-foreground">
-                💡 <strong>Quick search examples:</strong> Try searching by army number (e.g., "ARMY-2025-1001"), 
-                username (e.g., "john.smith"), or email domain (e.g., "@army.mil")
-              </div>
-            )}
-            
-            {/* Quick Filters */}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={searchTerm === '' ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSearchTerm('')}
-              >
-                All Users ({users.length})
-              </Button>
-              <Button
-                variant={searchTerm === 'user' ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSearchTerm('user')}
-              >
-                Regular Users ({users.filter(u => u.role === 'USER').length})
-              </Button>
-              <Button
-                variant={searchTerm === 'manager' ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSearchTerm('manager')}
-              >
-                Managers ({users.filter(u => u.role === 'MANAGER').length})
-              </Button>
-              <Button
-                variant={searchTerm === 'admin' ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSearchTerm('admin')}
-              >
-                Admins ({users.filter(u => u.role === 'ADMIN').length})
-              </Button>
-            </div>
-          </div>
-          {loadingUsers ? (
-            <div>Loading users...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              {filteredUsers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <div className="text-lg mb-2">🔍 No users found</div>
-                  <div className="text-sm">
-                    {searchTerm ? `No users match "${searchTerm}"` : 'No users available'}
-                  </div>
-                  {searchTerm && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSearchTerm('')}
-                      className="mt-3"
-                    >
-                      Clear Search
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-left p-3 font-medium">Username</th>
-                      <th className="text-left p-3 font-medium">Email</th>
-                      <th className="text-left p-3 font-medium">Role</th>
-                      <th className="text-left p-3 font-medium">Army Number</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map(user => (
-                      <tr key={user.id} className="border-b hover:bg-muted/30 transition-colors">
-                        <td className="p-3 font-medium">{user.username}</td>
-                        <td className="p-3">{user.email}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            user.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
-                            user.role === 'MANAGER' ? 'bg-blue-100 text-blue-800' :
-                            'bg-green-100 text-green-800'
-                          }`}>
-                            {user.role.toLowerCase()}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {user.armyNumber ? (
-                            <span className="font-mono bg-muted px-2 py-1 rounded text-xs">
-                              {user.armyNumber}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground italic text-xs">Not assigned</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Selected User Profile</CardTitle>
-            <Button variant="outline" size="sm" onClick={fetchProfile} disabled={loadingProfile || !selectedUserId}>
-              Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!selectedUserId && <div className="text-sm text-muted-foreground">Select a user to view their profile.</div>}
-          {selectedUserId && (
-            <div className="space-y-2">
-              {loadingProfile ? (
-                <div>Loading profile...</div>
-              ) : selectedUserProfile ? (
-                <div className="space-y-2">
-                  <div className="text-sm">
-                    {selectedUserProfile.username} ({selectedUserProfile.email})
-                    {selectedUserProfile.armyNumber && (
-                      <span className="ml-10 text-muted-foreground">• Army: {selectedUserProfile.armyNumber}</span>
-                    )}
-                  </div>
-                  {selectedUserProfile.profile ? (
-                    <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-72">{JSON.stringify(selectedUserProfile.profile, null, 2)}</pre>
-                  ) : (
-                    <div className="text-sm text-muted-foreground">No profile data yet.</div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Unable to load profile.</div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+
+
+
 
       <div className="grid md:grid-cols-2 gap-6">
         {/* Profile/Registration Edit */}
@@ -869,22 +864,23 @@ export default function ManagerDashboard() {
             <div className="space-y-2">
               {requests.length === 0 && <div className="text-sm text-muted-foreground">No requests yet.</div>}
               {requests.map(r => (
-                <div key={r.id} className="text-sm border rounded p-3 space-y-3">
+                <div key={r.id} className={`text-sm border rounded p-3 space-y-3 ${
+                  r.status === 'REJECTED' && r.adminRemark && !seenNotifications.has(r.id) 
+                    ? 'border-red-300 bg-red-50' 
+                    : ''
+                }`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium">{r.type} · {r.status}</div>
+                      <div className="font-medium flex items-center gap-2">
+                        {r.type} · {r.status}
+                        {r.status === 'REJECTED' && r.adminRemark && !seenNotifications.has(r.id) && (
+                          <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                            New
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
                     </div>
-                    {r.status === 'REJECTED' && r.adminRemark && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setResubmissionDialog({ open: true, request: r })}
-                        disabled={submitting}
-                      >
-                        Respond & Resubmit
-                      </Button>
-                    )}
                   </div>
                   
                   {r.status === 'REJECTED' && r.adminRemark && (
@@ -908,6 +904,80 @@ export default function ManagerDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Request Details Modal */}
+      <Dialog open={showRequestDetails} onOpenChange={setShowRequestDetails}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${
+                selectedStatus === 'APPROVED' ? 'bg-green-500' :
+                selectedStatus === 'REJECTED' ? 'bg-red-500' :
+                'bg-amber-500'
+              }`}></div>
+              {selectedStatus} Requests
+              <span className="ml-auto text-sm text-muted-foreground">
+                {requests.filter(req => req.status === selectedStatus).length} requests
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            {selectedStatus && requests.filter(req => req.status === selectedStatus).map((req) => (
+              <Card key={req.id} className="border-l-4" style={{
+                borderLeftColor: selectedStatus === 'APPROVED' ? '#10b981' :
+                                selectedStatus === 'REJECTED' ? '#ef4444' : '#f59e0b'
+              }}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{req.type}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {new Date(req.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                                         <div className="text-right">
+                       <div className="text-sm font-medium">
+                         {req.data?.userId ? 
+                           users.find(u => u.id === req.data.userId)?.username || 'Unknown User' :
+                           'System Request'
+                         }
+                       </div>
+                       <div className="text-xs text-muted-foreground">
+                         {req.data?.userId ? 
+                           users.find(u => u.id === req.data.userId)?.email || 'No email' :
+                           'No user associated'
+                         }
+                       </div>
+                       {req.data?.userId && users.find(u => u.id === req.data.userId)?.armyNumber && (
+                         <div className="text-xs font-mono bg-muted px-2 py-1 rounded mt-1">
+                           {users.find(u => u.id === req.data.userId)?.armyNumber}
+                         </div>
+                       )}
+                     </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {req.adminRemark && (
+                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded">
+                      <div className="font-medium text-red-800 mb-1">Admin Remark:</div>
+                      <div className="text-red-700">{req.adminRemark}</div>
+                    </div>
+                  )}
+                  {req.managerResponse && (
+                    <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <div className="font-medium text-blue-800 mb-1">Manager Response:</div>
+                      <div className="text-blue-700">{req.managerResponse}</div>
+                    </div>
+                  )}
+                  <div className="text-xs bg-muted p-3 rounded font-mono overflow-auto">
+                    {JSON.stringify(req.data, null, 2)}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ResubmissionDialog
         open={resubmissionDialog.open}
