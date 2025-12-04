@@ -1,0 +1,63 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  armyNumber   String?  @unique @map("army_number")
+  username     String   @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  profile      UserProfile?
+  requests     Request[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  userId          String   @id @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personalDetails Json?    @map("personal_details")
+  family          Json?
+  education       Json?
+  medical         Json?
+  others          Json?
+  leaveData       Json?    @map("leave")
+  salaryData      Json?    @map("salary")
+  documents       Json?    // Store document metadata and file paths for each section
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  @@map("user_profiles")
+}
+
+enum Role {
+  USER
+  ADMIN
+  MANAGER
+}
+
+model Request {
+  id        String   @id @default(cuid())
+  type      String
+  data      Json
+  status    String   @default("PENDING")
+  requesterId String
+  requester User     @relation(fields: [requesterId], references: [id])
+  adminRemark String? @map("admin_remark")
+  managerResponse String? @map("manager_response")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("requests")
+}
