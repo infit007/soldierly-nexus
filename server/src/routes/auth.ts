@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
-import { prisma } from '../db.js'
+import { supabase } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { AuthenticatedRequest } from '../types/index.js'
 
@@ -10,12 +10,13 @@ const router = Router()
 function setAuthCookie(res: Response, payload: any) {
   const secret = process.env.JWT_SECRET || 'dev-secret'
   const token = jwt.sign(payload, secret, { expiresIn: '7d' })
+  const isProduction = process.env.NODE_ENV === 'production'
   
   // Always use secure cookies for cross-domain requests
   res.cookie('token', token, {
     httpOnly: true,
-    secure: true, // Always secure for cross-domain
-    sameSite: 'none', // Required for cross-domain
+    secure: isProduction, // HTTPS in prod; HTTP allowed in dev
+    sameSite: isProduction ? 'none' : 'lax', // same-origin in dev; cross-site in prod
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
     domain: undefined, // Let browser set the domain
@@ -34,30 +35,42 @@ router.post('/signup', async (req: Request, res: Response) => {
     const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
     const armyNumber = `ARMY-${year}-${randomNum}`
     
-    const user = await prisma.user.create({
-      data: {
-        armyNumber,
+    const { data: userData, error } = await supabase
+      .from('users')
+      .insert({
+        army_number: armyNumber,
         username,
         email,
-        passwordHash,
+        password_hash: passwordHash,
         role: 'USER'
-      },
-      select: {
-        id: true,
-        armyNumber: true,
-        username: true,
-        email: true,
-        role: true
+      })
+      .select('id, army_number, username, email, role')
+      .single()
+    
+    if (error) {
+      console.error('Signup error:', error)
+      if (error.code === '23505') { // PostgreSQL unique violation
+        return res.status(409).json({ error: 'Username or email already exists' })
       }
-    })
+      return res.status(500).json({ error: 'Internal error' })
+    }
+    
+    if (!userData) {
+      return res.status(500).json({ error: 'Internal error' })
+    }
+    
+    const user = {
+      id: userData.id,
+      armyNumber: userData.army_number,
+      username: userData.username,
+      email: userData.email,
+      role: userData.role
+    }
     
     setAuthCookie(res, { userId: user.id, role: user.role })
     return res.json(user)
   } catch (e) {
     console.error('Signup error:', e)
-    if (e.code === 'P2002') {
-      return res.status(409).json({ error: 'Username or email already exists' })
-    }
     return res.status(500).json({ error: 'Internal error' })
   }
 })
@@ -67,24 +80,29 @@ router.post('/login', async (req: Request, res: Response) => {
   if (!usernameOrEmail || !password) return res.status(400).json({ error: 'Missing fields' })
   
   try {
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username: usernameOrEmail },
-          { email: usernameOrEmail }
-        ]
-      }
-    })
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, army_number, username, email, password_hash, role')
+      .or(`username.eq.${usernameOrEmail},email.eq.${usernameOrEmail}`)
+      .limit(1)
     
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' })
+    if (error) {
+      console.error('Login query error:', error)
+      return res.status(500).json({ error: 'Internal error' })
+    }
     
-    const ok = await bcrypt.compare(password, user.passwordHash)
+    if (error || !users || users.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+    
+    const user = users[0]
+    const ok = await bcrypt.compare(password, user.password_hash)
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
     
     setAuthCookie(res, { userId: user.id, role: user.role })
     return res.json({
       id: user.id,
-      armyNumber: user.armyNumber,
+      armyNumber: user.army_number,
       username: user.username,
       email: user.email,
       role: user.role
@@ -107,19 +125,22 @@ router.post('/logout', (_req: Request, res: Response) => {
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const auth = req.auth
-    const user = await prisma.user.findUnique({
-      where: { id: auth.userId },
-      select: {
-        id: true,
-        armyNumber: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true
-      }
-    })
+    const isProduction = process.env.NODE_ENV === 'production'
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, army_number as armyNumber, username, email, role, created_at as createdAt')
+      .eq('id', auth.userId)
+      .single()
     
-    if (!user) return res.status(404).json({ error: 'Not found' })
+    if (error || !user) {
+      // Token refers to a missing user (probably stale) → clear it and force re-login
+      res.clearCookie('token', {
+        path: '/',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+      })
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
     res.json(user)
   } catch (e) {
     console.error('Me error:', e)
@@ -131,36 +152,42 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
 router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Get total counts
-    const totalUsers = await prisma.user.count()
-    const totalAdmins = await prisma.user.count({ where: { role: 'ADMIN' } })
-    const totalRegularUsers = await prisma.user.count({ where: { role: 'USER' } })
+    const { count: totalUsers } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+    
+    const { count: totalAdmins } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'ADMIN')
+    
+    const { count: totalRegularUsers } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'USER')
     
     // Get current date info
     const now = new Date()
-    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const thisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
     
     // Get monthly and weekly counts
-    const usersThisMonth = await prisma.user.count({
-      where: { createdAt: { gte: thisMonth } }
-    })
+    const { count: usersThisMonth } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', thisMonth)
     
-    const usersThisWeek = await prisma.user.count({
-      where: { createdAt: { gte: thisWeek } }
-    })
+    const { count: usersThisWeek } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', thisWeek)
     
     // Get recent registrations
-    const recentRegistrations = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true
-      }
-    })
+    const { data: recentRegistrations } = await supabase
+      .from('users')
+      .select('id, username, email, role, created_at as createdAt')
+      .order('created_at', { ascending: false })
+      .limit(10)
     
     // Generate monthly registration data for the last 12 months
     const monthlyRegistrations = []
@@ -168,31 +195,28 @@ router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req: Authen
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
 
-      const count = await prisma.user.count({
-        where: {
-          createdAt: {
-            gte: monthStart,
-            lt: nextMonthStart
-          }
-        }
-      })
+      const { count } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', monthStart.toISOString())
+        .lt('created_at', nextMonthStart.toISOString())
       
       monthlyRegistrations.push({
         month: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-        count
+        count: count || 0
       })
     }
     
     const stats = {
-      totalUsers,
-      totalAdmins,
-      totalRegularUsers,
-      usersThisMonth,
-      usersThisWeek,
-      recentRegistrations,
+      totalUsers: totalUsers || 0,
+      totalAdmins: totalAdmins || 0,
+      totalRegularUsers: totalRegularUsers || 0,
+      usersThisMonth: usersThisMonth || 0,
+      usersThisWeek: usersThisWeek || 0,
+      recentRegistrations: recentRegistrations || [],
       roleDistribution: {
-        USER: totalRegularUsers,
-        ADMIN: totalAdmins
+        USER: totalRegularUsers || 0,
+        ADMIN: totalAdmins || 0
       },
       monthlyRegistrations
     }
@@ -207,30 +231,52 @@ router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req: Authen
 // Get all users with their profile data
 router.get('/admin/users', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        profile: {
-          select: {
-            personalDetails: true,
-            family: true,
-            education: true,
-            medical: true,
-            others: true,
-            leaveData: true,
-            salaryData: true,
-            updatedAt: true
-          }
-        }
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, username, email, role, created_at')
+      .order('created_at', { ascending: false })
+    
+    if (usersError) {
+      console.error('Get users error:', usersError)
+      return res.status(500).json({ error: 'Internal error' })
+    }
+    
+    if (!users || users.length === 0) {
+      return res.json([])
+    }
+    
+    // Get all profiles for these users
+    const userIds = users.map((u: any) => u.id)
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .in('user_id', userIds)
+    
+    const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]))
+    
+    // Transform the data to match the expected format
+    const transformedUsers = users.map((user: any) => {
+      const profile = profileMap.get(user.id)
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        createdAt: user.created_at,
+        profile: profile ? {
+          personalDetails: profile.personal_details,
+          family: profile.family,
+          education: profile.education,
+          medical: profile.medical,
+          others: profile.others,
+          leaveData: profile.leave,
+          salaryData: profile.salary,
+          updatedAt: profile.updated_at
+        } : null
       }
     })
     
-    res.json(users)
+    res.json(transformedUsers)
   } catch (e) {
     console.error('Get users error:', e)
     res.status(500).json({ error: 'Internal error' })
@@ -241,31 +287,40 @@ router.get('/admin/users', requireAuth, requireRole('ADMIN'), async (req: Authen
 router.get('/admin/users/:userId', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId } = req.params
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        profile: {
-          select: {
-            personalDetails: true,
-            family: true,
-            education: true,
-            medical: true,
-            others: true,
-            leaveData: true,
-            salaryData: true,
-            updatedAt: true
-          }
-        }
-      }
-    })
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, username, email, role, created_at')
+      .eq('id', userId)
+      .single()
     
-    if (!user) return res.status(404).json({ error: 'User not found' })
-    res.json(user)
+    if (userError || !user) return res.status(404).json({ error: 'User not found' })
+    
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+    
+    // Transform the data to match the expected format
+    const transformedUser = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      createdAt: user.created_at,
+      profile: profile ? {
+        personalDetails: profile.personal_details,
+        family: profile.family,
+        education: profile.education,
+        medical: profile.medical,
+        others: profile.others,
+        leaveData: profile.leave,
+        salaryData: profile.salary,
+        updatedAt: profile.updated_at
+      } : null
+    }
+    
+    res.json(transformedUser)
   } catch (e) {
     console.error('Get user error:', e)
     res.status(500).json({ error: 'Internal error' })
@@ -279,28 +334,28 @@ router.put('/update-army-number', requireAuth, async (req: AuthenticatedRequest,
   
   try {
     // Check if army number is already taken by another user
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        armyNumber,
-        id: { not: req.auth.userId }
-      }
-    })
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('army_number', armyNumber)
+      .neq('id', req.auth.userId)
+      .single()
     
     if (existingUser) {
       return res.status(409).json({ error: 'Army number already exists' })
     }
     
-    const updatedUser = await prisma.user.update({
-      where: { id: req.auth.userId },
-      data: { armyNumber },
-      select: {
-        id: true,
-        armyNumber: true,
-        username: true,
-        email: true,
-        role: true
-      }
-    })
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update({ army_number: armyNumber })
+      .eq('id', req.auth.userId)
+      .select('id, army_number as armyNumber, username, email, role')
+      .single()
+    
+    if (error) {
+      console.error('Update army number error:', error)
+      return res.status(500).json({ error: 'Internal error' })
+    }
     
     res.json(updatedUser)
   } catch (e) {

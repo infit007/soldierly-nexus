@@ -1,7 +1,7 @@
 import express from 'express'
 import { requireAuth } from '../middleware/auth.js'
 import { AuthenticatedRequest } from '../types/index.js'
-import { prisma } from '../db.js'
+import { supabase } from '../db.js'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
@@ -41,12 +41,14 @@ const upload = multer({
 })
 
 // Get user profile
-router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/profile', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId }
-    })
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
     res.json(profile || {})
   } catch (e) {
     console.error('Get profile error:', e)
@@ -59,11 +61,16 @@ router.put('/personal', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
     const data = req.body
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { personalDetails: data, updatedAt: new Date() },
-      create: { userId, personalDetails: data }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        personal_details: data,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     console.error('Update personal details error:', e)
@@ -76,11 +83,16 @@ router.put('/family', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
     const data = req.body
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { family: data, updatedAt: new Date() },
-      create: { userId, family: data }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        family: data,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     console.error('Update family details error:', e)
@@ -93,11 +105,16 @@ router.put('/education', requireAuth, async (req: AuthenticatedRequest, res) => 
   try {
     const userId = req.auth.userId
     const data = req.body
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { education: data, updatedAt: new Date() },
-      create: { userId, education: data }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        education: data,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     console.error('Update education details error:', e)
@@ -110,11 +127,16 @@ router.put('/medical', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
     const data = req.body
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { medical: data, updatedAt: new Date() },
-      create: { userId, medical: data }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        medical: data,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     console.error('Update medical details error:', e)
@@ -127,11 +149,16 @@ router.put('/others', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId
     const data = req.body
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { others: data, updatedAt: new Date() },
-      create: { userId, others: data }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        others: data,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     console.error('Update others details error:', e)
@@ -155,9 +182,11 @@ router.post('/documents', requireAuth, upload.single('file'), async (req: Authen
     }
 
     // Get current documents
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId }
-    })
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('documents')
+      .eq('user_id', userId)
+      .single()
 
     const currentDocuments = (profile?.documents as Record<string, any>) || {}
     
@@ -176,11 +205,16 @@ router.post('/documents', requireAuth, upload.single('file'), async (req: Authen
     }
 
     // Update profile with new document
-    await prisma.userProfile.upsert({
-      where: { userId },
-      update: { documents: updatedDocuments, updatedAt: new Date() },
-      create: { userId, documents: updatedDocuments }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        user_id: userId,
+        documents: updatedDocuments,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+    if (error) throw error
 
     res.json({ ok: true, document: newDocument })
   } catch (e) {
@@ -196,9 +230,11 @@ router.delete('/documents/:section', requireAuth, async (req: AuthenticatedReque
     const section = req.params.section
 
     // Get current documents
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId }
-    })
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('documents')
+      .eq('user_id', userId)
+      .single()
 
     if (!profile?.documents) {
       return res.status(404).json({ error: 'No documents found' })
@@ -224,10 +260,14 @@ router.delete('/documents/:section', requireAuth, async (req: AuthenticatedReque
     const updatedDocuments = { ...currentDocuments }
     delete updatedDocuments[section]
 
-    await prisma.userProfile.update({
-      where: { userId },
-      data: { documents: updatedDocuments, updatedAt: new Date() }
-    })
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        documents: updatedDocuments,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+    if (error) throw error
 
     res.json({ ok: true })
   } catch (e) {
@@ -243,9 +283,11 @@ router.get('/documents/:section', requireAuth, async (req: AuthenticatedRequest,
     const section = req.params.section
 
     // Get document info
-    const profile = await prisma.userProfile.findUnique({
-      where: { userId }
-    })
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('documents')
+      .eq('user_id', userId)
+      .single()
 
     if (!profile?.documents) {
       return res.status(404).json({ error: 'No documents found' })

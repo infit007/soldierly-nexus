@@ -1,14 +1,23 @@
 import { Router, Request, Response } from 'express'
-import { prisma } from '../db.js'
+import { supabase } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { AuthenticatedRequest } from '../types/index.js'
 
 const router = Router()
 
 async function ensureProfile(userId: string) {
-  const existing = await prisma.userProfile.findUnique({ where: { userId } })
+  const { data: existing } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
   if (existing) return existing
-  return prisma.userProfile.create({ data: { userId } })
+  const { data: newProfile } = await supabase
+    .from('user_profiles')
+    .insert({ user_id: userId })
+    .select()
+    .single()
+  return newProfile
 }
 
 // Type guards for JSON data
@@ -30,59 +39,71 @@ async function applyApprovedRequest(reqRow: any) {
   switch (type) {
     case 'LEAVE': {
       // Merge into leaveData (append to requests array)
-      const profile = await prisma.userProfile.findUnique({ where: { userId } })
-      const leaveData = profile?.leaveData || {}
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('leave')
+        .eq('user_id', userId)
+        .single()
+      const leaveData = profile?.leave || {}
       const safeLeaveData = isObject(leaveData) ? leaveData : {}
       const requests = isArray((safeLeaveData as any).requests) ? (safeLeaveData as any).requests : []
       requests.push({ ...data.leave, approvedAt: new Date().toISOString() })
-      await prisma.userProfile.update({
-        where: { userId },
-        data: { leaveData: { ...safeLeaveData, requests }, updatedAt: new Date() }
-      })
+      await supabase
+        .from('user_profiles')
+        .update({ leave: { ...safeLeaveData, requests }, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
       break
     }
     case 'OUTPASS': {
       // Merge into leaveData.outpasses
-      const profile = await prisma.userProfile.findUnique({ where: { userId } })
-      const leaveData = profile?.leaveData || {}
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('leave')
+        .eq('user_id', userId)
+        .single()
+      const leaveData = profile?.leave || {}
       const safeLeaveData = isObject(leaveData) ? leaveData : {}
       const outpasses = isArray((safeLeaveData as any).outpasses) ? (safeLeaveData as any).outpasses : []
       outpasses.push({ ...data.outpass, approvedAt: new Date().toISOString() })
-      await prisma.userProfile.update({
-        where: { userId },
-        data: { leaveData: { ...safeLeaveData, outpasses }, updatedAt: new Date() }
-      })
+      await supabase
+        .from('user_profiles')
+        .update({ leave: { ...safeLeaveData, outpasses }, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
       break
     }
     case 'SALARY': {
       // Replace/merge salaryData
-      const profile = await prisma.userProfile.findUnique({ where: { userId } })
-      const current = profile?.salaryData || {}
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('salary')
+        .eq('user_id', userId)
+        .single()
+      const current = profile?.salary || {}
       const safeCurrent = isObject(current) ? current : {}
       const safeSalaryData = isObject(data.salary) ? data.salary : {}
-      await prisma.userProfile.update({
-        where: { userId },
-        data: { salaryData: { ...safeCurrent, ...safeSalaryData }, updatedAt: new Date() }
-      })
+      await supabase
+        .from('user_profiles')
+        .update({ salary: { ...safeCurrent, ...safeSalaryData }, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
       break
     }
     case 'PROFILE_UPDATE': {
       const { section, data: sectionData } = data
       const map: Record<string, string> = {
-        personal: 'personalDetails',
+        personal: 'personal_details',
         family: 'family',
         education: 'education',
         medical: 'medical',
         others: 'others',
-        leave: 'leaveData',
-        salary: 'salaryData'
+        leave: 'leave',
+        salary: 'salary'
       }
       const column = map[section]
       if (!column) return
-      await prisma.userProfile.update({
-        where: { userId },
-        data: { [column]: sectionData, updatedAt: new Date() }
-      })
+      await supabase
+        .from('user_profiles')
+        .update({ [column]: sectionData, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
       break
     }
     default:
@@ -99,24 +120,33 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
       ...(status ? { status } : {}),
       ...(type ? { type } : {}),
     }
-    const requests = await prisma.request.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        data: true,
-        adminRemark: true,
-        managerResponse: true,
-        createdAt: true,
-        updatedAt: true,
-        requester: { select: { id: true, username: true, email: true, role: true } }
-      }
-    })
+    let query = supabase
+      .from('requests')
+      .select(`
+        id,
+        type,
+        status,
+        data,
+        admin_remark as adminRemark,
+        manager_response as managerResponse,
+        created_at as createdAt,
+        updated_at as updatedAt,
+        users!requests_requester_id_fkey (
+          id,
+          username,
+          email,
+          role
+        )
+      `)
+      .order('created_at', { ascending: false })
+    
+    if (status) query = query.eq('status', status)
+    if (type) query = query.eq('type', type)
+    
+    const { data: requests } = await query
 
     // Collect all unique user IDs with proper type checking
-    const userIds = [...new Set(requests.map(r => {
+    const userIds = [...new Set((requests || []).map((r: any) => {
       const requestData = r.data as any
       if (isObject(requestData) && typeof requestData.userId === 'string') {
         return requestData.userId
@@ -125,17 +155,18 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
     }).filter(Boolean))]
     
     // Fetch all target users in one query
-    const targetUsers = userIds.length > 0 ? await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, username: true, email: true, armyNumber: true, role: true }
-    }) : []
+    const { data: targetUsers } = userIds.length > 0 ? await supabase
+      .from('users')
+      .select('id, username, email, army_number as armyNumber, role')
+      .in('id', userIds) : { data: [] }
     
     // Create a map for quick lookup
-    const userMap = new Map(targetUsers.map(u => [u.id, u]))
+    const userMap = new Map((targetUsers || []).map((u: any) => [u.id, u]))
     
     // Add target user information for each request
-    const requestsWithTargetUser = requests.map(request => ({
+    const requestsWithTargetUser = (requests || []).map((request: any) => ({
       ...request,
+      requester: request.users,
       targetUser: (() => {
         const requestData = request.data as any
         if (isObject(requestData) && typeof requestData.userId === 'string') {
@@ -155,12 +186,21 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
 router.post('/admin/requests/:id/approve', requireAuth, requireRole('ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params
   try {
-    const request = await prisma.request.findUnique({ where: { id } })
+    const { data: request } = await supabase
+      .from('requests')
+      .select('*')
+      .eq('id', id)
+      .single()
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'PENDING') return res.status(400).json({ error: 'Request not pending' })
 
     // Update request status immediately
-    const updated = await prisma.request.update({ where: { id }, data: { status: 'APPROVED' } })
+    const { data: updated } = await supabase
+      .from('requests')
+      .update({ status: 'APPROVED' })
+      .eq('id', id)
+      .select()
+      .single()
     
     // Apply profile updates asynchronously (don't wait for it)
     applyApprovedRequest(updated).catch(e => {
@@ -179,24 +219,30 @@ router.post('/admin/requests/:id/reject', requireAuth, requireRole('ADMIN'), asy
   const { id } = req.params
   const { remark } = req.body || {}
   try {
-    const request = await prisma.request.findUnique({ where: { id } })
+    const { data: request } = await supabase
+      .from('requests')
+      .select('*')
+      .eq('id', id)
+      .single()
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'PENDING') return res.status(400).json({ error: 'Request not pending' })
     if (!remark || typeof remark !== 'string' || remark.trim().length === 0) {
       return res.status(400).json({ error: 'Remark is required for rejection' })
     }
 
-    const updated = await prisma.request.update({ 
-      where: { id }, 
-      data: { 
+    const { data: updated } = await supabase
+      .from('requests')
+      .update({ 
         status: 'REJECTED', 
-        adminRemark: remark.trim(),
+        admin_remark: remark.trim(),
         data: { 
           ...(isObject(request.data as any) ? request.data as any : {}), 
           rejectionReason: remark.trim() 
         } 
-      } 
-    })
+      })
+      .eq('id', id)
+      .select()
+      .single()
     res.json({ ok: true, request: updated })
   } catch (e) {
     console.error('Reject request error:', e)
@@ -209,10 +255,14 @@ router.post('/manager/requests/:id/resubmit', requireAuth, requireRole('MANAGER'
   const { id } = req.params
   const { response, updatedData } = req.body || {}
   try {
-    const request = await prisma.request.findUnique({ where: { id } })
+    const { data: request } = await supabase
+      .from('requests')
+      .select('*')
+      .eq('id', id)
+      .single()
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'REJECTED') return res.status(400).json({ error: 'Request is not rejected' })
-    if (request.requesterId !== req.auth.userId) return res.status(403).json({ error: 'Not authorized to resubmit this request' })
+    if (request.requester_id !== req.auth.userId) return res.status(403).json({ error: 'Not authorized to resubmit this request' })
     if (!response || typeof response !== 'string' || response.trim().length === 0) {
       return res.status(400).json({ error: 'Response to admin remark is required' })
     }
@@ -220,15 +270,17 @@ router.post('/manager/requests/:id/resubmit', requireAuth, requireRole('MANAGER'
     // Merge updated data with original data if provided
     const newData = updatedData ? { ...(isObject(request.data as any) ? request.data as any : {}), ...updatedData } : request.data
 
-    const updated = await prisma.request.update({ 
-      where: { id }, 
-      data: { 
+    const { data: updated } = await supabase
+      .from('requests')
+      .update({ 
         status: 'PENDING', 
-        managerResponse: response.trim(),
+        manager_response: response.trim(),
         data: newData,
-        updatedAt: new Date()
-      } 
-    })
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single()
     res.json({ ok: true, request: updated })
   } catch (e) {
     console.error('Resubmit request error:', e)

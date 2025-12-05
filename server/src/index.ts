@@ -6,7 +6,7 @@ import authRoutes from './routes/auth.js'
 import profileRoutes from './routes/profile.js'
 import managerRoutes from './routes/manager.js'
 import requestsRoutes from './routes/requests.js'
-import { prisma } from './db.js'
+import { supabase } from './db.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
@@ -28,7 +28,9 @@ app.use(cors(corsOptions))
 
 app.get('/api/health', async (_req, res) => {
   try {
-    await prisma.$queryRaw`SELECT 1`
+    // Test Supabase connection
+    const { error } = await supabase.from('users').select('id').limit(1)
+    if (error) throw error
     res.json({ ok: true })
   } catch (e) {
     res.status(500).json({ ok: false })

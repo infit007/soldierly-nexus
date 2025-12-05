@@ -14,10 +14,12 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "seed:supabase": "tsx seed-supabase.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
+    "@supabase/supabase-js": "^2.86.2",
     "@types/multer": "^2.0.0",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",

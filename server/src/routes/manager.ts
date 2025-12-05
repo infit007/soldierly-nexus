@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { prisma } from '../db.js'
+import { supabase } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { AuthenticatedRequest } from '../types/index.js'
 
@@ -8,11 +8,11 @@ const router = Router()
 // Manager: list all users (basic info) for selection in manager tools
 router.get('/manager/users', requireAuth, requireRole('MANAGER'), async (_req: Request, res: Response) => {
   try {
-    const users = await prisma.user.findMany({
-      orderBy: { username: 'asc' },
-      select: { id: true, username: true, email: true, role: true, armyNumber: true }
-    })
-    res.json(users)
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, username, email, role, army_number as armyNumber')
+      .order('username', { ascending: true })
+    res.json(users || [])
   } catch (e) {
     console.error('List users for manager error:', e)
     res.status(500).json({ error: 'Internal error' })
@@ -23,14 +23,26 @@ router.get('/manager/users', requireAuth, requireRole('MANAGER'), async (_req: R
 router.get('/manager/users/:id/profile', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: { id: true, username: true, email: true, role: true, armyNumber: true }
-    })
-    if (!user) return res.status(404).json({ error: 'User not found' })
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, username, email, role, army_number')
+      .eq('id', id)
+      .single()
+    if (userError || !userData) return res.status(404).json({ error: 'User not found' })
 
-    const profile = await prisma.userProfile.findUnique({ where: { userId: id } })
-    return res.json({ ...user, profile: profile || null })
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', id)
+      .single()
+    return res.json({ 
+      id: userData.id,
+      username: userData.username,
+      email: userData.email,
+      role: userData.role,
+      armyNumber: userData.army_number,
+      profile: profile || null 
+    })
   } catch (e) {
     console.error('Get user profile for manager error:', e)
     return res.status(500).json({ error: 'Internal error' })
@@ -39,21 +51,17 @@ router.get('/manager/users/:id/profile', requireAuth, requireRole('MANAGER'), as
 
 // Helper to create a request row
 async function createRequest(requesterId: string, type: string, data: any) {
-  return prisma.request.create({
-    data: {
+  const { data: request } = await supabase
+    .from('requests')
+    .insert({
       type,
       data,
-      requesterId,
+      requester_id: requesterId,
       status: 'PENDING',
-    },
-    select: {
-      id: true,
-      type: true,
-      status: true,
-      data: true,
-      createdAt: true,
-    }
-  })
+    })
+    .select('id, type, status, data, created_at as createdAt')
+    .single()
+  return request
 }
 
 // Manager: create Leave request for a user
@@ -63,7 +71,11 @@ router.post('/manager/requests/leave', requireAuth, requireRole('MANAGER'), asyn
     const { userId, leave } = req.body
     if (!userId || !leave) return res.status(400).json({ error: 'Missing userId or leave' })
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single()
     if (!user) return res.status(404).json({ error: 'Target user not found' })
 
     const request = await createRequest(requesterId, 'LEAVE', { userId, leave })
@@ -81,7 +93,11 @@ router.post('/manager/requests/outpass', requireAuth, requireRole('MANAGER'), as
     const { userId, outpass } = req.body
     if (!userId || !outpass) return res.status(400).json({ error: 'Missing userId or outpass' })
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single()
     if (!user) return res.status(404).json({ error: 'Target user not found' })
 
     const request = await createRequest(requesterId, 'OUTPASS', { userId, outpass })
@@ -99,7 +115,11 @@ router.post('/manager/requests/salary', requireAuth, requireRole('MANAGER'), asy
     const { userId, salary } = req.body
     if (!userId || !salary) return res.status(400).json({ error: 'Missing userId or salary' })
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single()
     if (!user) return res.status(404).json({ error: 'Target user not found' })
 
     const request = await createRequest(requesterId, 'SALARY', { userId, salary })
@@ -120,7 +140,11 @@ router.post('/manager/requests/profile-edit', requireAuth, requireRole('MANAGER'
     if (!userId || !section || data === undefined) return res.status(400).json({ error: 'Missing userId, section or data' })
     if (!allowed.has(section)) return res.status(400).json({ error: 'Invalid section' })
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single()
     if (!user) return res.status(404).json({ error: 'Target user not found' })
 
     const request = await createRequest(requesterId, 'PROFILE_UPDATE', { userId, section, data })
@@ -137,11 +161,15 @@ router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req:
     const requesterId = req.auth.userId
     const status = req.query.status && String(req.query.status).toUpperCase()
     const where = { requesterId, ...(status ? { status } : {}) }
-    const requests = await prisma.request.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, type: true, status: true, data: true, adminRemark: true, managerResponse: true, createdAt: true, updatedAt: true }
-    })
+    let query = supabase
+      .from('requests')
+      .select('id, type, status, data, admin_remark as adminRemark, manager_response as managerResponse, created_at as createdAt, updated_at as updatedAt')
+      .eq('requester_id', requesterId)
+      .order('created_at', { ascending: false })
+    
+    if (status) query = query.eq('status', status)
+    
+    const { data: requests } = await query
     return res.json({ ok: true, requests })
   } catch (e) {
     console.error('List manager requests error:', e)
