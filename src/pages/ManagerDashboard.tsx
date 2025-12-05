@@ -219,6 +219,7 @@ export default function ManagerDashboard() {
 
   // Get rejected requests for notification (excluding seen ones)
   const rejectedRequests = useMemo(() => {
+    if (!requests || !Array.isArray(requests)) return []
     return requests.filter(req => 
       req.status === 'REJECTED' && 
       req.adminRemark && 
@@ -240,6 +241,13 @@ export default function ManagerDashboard() {
 
   // Calculate request statistics for pie chart
   const requestStats = useMemo(() => {
+    if (!requests || !Array.isArray(requests)) {
+      return [
+        { label: 'Approved', value: 0, color: '#10b981', status: 'APPROVED' },
+        { label: 'Rejected', value: 0, color: '#ef4444', status: 'REJECTED' },
+        { label: 'Pending', value: 0, color: '#f59e0b', status: 'PENDING' }
+      ]
+    }
     const approved = requests.filter(req => req.status === 'APPROVED').length
     const rejected = requests.filter(req => req.status === 'REJECTED').length
     const pending = requests.filter(req => req.status === 'PENDING').length
@@ -611,7 +619,7 @@ export default function ManagerDashboard() {
             <div className="pt-4 border-t">
               <div className="text-center">
                 <div className="text-3xl font-bold">
-                  {requests.length}
+                  {requests && Array.isArray(requests) ? requests.length : 0}
                 </div>
                 <div className="text-sm text-muted-foreground">Total Requests</div>
               </div>
@@ -862,8 +870,8 @@ export default function ManagerDashboard() {
             <div>Loading...</div>
           ) : (
             <div className="space-y-2">
-              {requests.length === 0 && <div className="text-sm text-muted-foreground">No requests yet.</div>}
-              {requests.map(r => (
+              {(!requests || requests.length === 0) && <div className="text-sm text-muted-foreground">No requests yet.</div>}
+              {requests && requests.map(r => (
                 <div key={r.id} className={`text-sm border rounded p-3 space-y-3 ${
                   r.status === 'REJECTED' && r.adminRemark && !seenNotifications.has(r.id) 
                     ? 'border-red-300 bg-red-50' 
@@ -917,12 +925,12 @@ export default function ManagerDashboard() {
               }`}></div>
               {selectedStatus} Requests
               <span className="ml-auto text-sm text-muted-foreground">
-                {requests.filter(req => req.status === selectedStatus).length} requests
+                {requests && Array.isArray(requests) ? requests.filter(req => req.status === selectedStatus).length : 0} requests
               </span>
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-            {selectedStatus && requests.filter(req => req.status === selectedStatus).map((req) => (
+            {selectedStatus && requests && Array.isArray(requests) && requests.filter(req => req.status === selectedStatus).map((req) => (
               <Card key={req.id} className="border-l-4" style={{
                 borderLeftColor: selectedStatus === 'APPROVED' ? '#10b981' :
                                 selectedStatus === 'REJECTED' ? '#ef4444' : '#f59e0b'

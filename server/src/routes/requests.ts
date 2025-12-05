@@ -127,10 +127,10 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
         type,
         status,
         data,
-        admin_remark as adminRemark,
-        manager_response as managerResponse,
-        created_at as createdAt,
-        updated_at as updatedAt,
+        admin_remark,
+        manager_response,
+        created_at,
+        updated_at,
         users!requests_requester_id_fkey (
           id,
           username,
@@ -143,7 +143,16 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
     if (status) query = query.eq('status', status)
     if (type) query = query.eq('type', type)
     
-    const { data: requests } = await query
+    const { data: requestsRaw } = await query
+    
+    // Transform snake_case to camelCase
+    const requests = (requestsRaw || []).map((r: any) => ({
+      ...r,
+      adminRemark: r.admin_remark,
+      managerResponse: r.manager_response,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }))
 
     // Collect all unique user IDs with proper type checking
     const userIds = [...new Set((requests || []).map((r: any) => {
@@ -155,13 +164,22 @@ router.get('/admin/requests', requireAuth, requireRole('ADMIN'), async (req: Aut
     }).filter(Boolean))]
     
     // Fetch all target users in one query
-    const { data: targetUsers } = userIds.length > 0 ? await supabase
+    const { data: targetUsersRaw } = userIds.length > 0 ? await supabase
       .from('users')
-      .select('id, username, email, army_number as armyNumber, role')
+      .select('id, username, email, army_number, role')
       .in('id', userIds) : { data: [] }
     
+    // Transform snake_case to camelCase
+    const targetUsers = (targetUsersRaw || []).map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      armyNumber: u.army_number,
+      role: u.role
+    }))
+    
     // Create a map for quick lookup
-    const userMap = new Map((targetUsers || []).map((u: any) => [u.id, u]))
+    const userMap = new Map(targetUsers.map((u: any) => [u.id, u]))
     
     // Add target user information for each request
     const requestsWithTargetUser = (requests || []).map((request: any) => ({

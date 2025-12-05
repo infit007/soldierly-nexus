@@ -10,13 +10,17 @@ const router = Router()
 function setAuthCookie(res: Response, payload: any) {
   const secret = process.env.JWT_SECRET || 'dev-secret'
   const token = jwt.sign(payload, secret, { expiresIn: '7d' })
-  const isProduction = process.env.NODE_ENV === 'production'
+  // Treat all hosted environments (Vercel/Render/etc) as "production" for cookie policy
+  const isProdLike =
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.RENDER)
   
   // Always use secure cookies for cross-domain requests
   res.cookie('token', token, {
     httpOnly: true,
-    secure: isProduction, // HTTPS in prod; HTTP allowed in dev
-    sameSite: isProduction ? 'none' : 'lax', // same-origin in dev; cross-site in prod
+    secure: isProdLike, // HTTPS in prod/hosted; HTTP allowed locally
+    sameSite: isProdLike ? 'none' : 'lax', // allow cross-site cookies for hosted frontend/backend on different domains
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
     domain: undefined, // Let browser set the domain
@@ -77,9 +81,15 @@ router.post('/signup', async (req: Request, res: Response) => {
 
 router.post('/login', async (req: Request, res: Response) => {
   const { usernameOrEmail, password } = req.body
-  if (!usernameOrEmail || !password) return res.status(400).json({ error: 'Missing fields' })
+  console.log('🔐 Login attempt:', { usernameOrEmail: usernameOrEmail?.substring(0, 20) + '...', hasPassword: !!password })
+  
+  if (!usernameOrEmail || !password) {
+    console.log('❌ Login failed: Missing fields')
+    return res.status(400).json({ error: 'Missing fields' })
+  }
   
   try {
+    console.log('🔍 Querying database for user...')
     const { data: users, error } = await supabase
       .from('users')
       .select('id, army_number, username, email, password_hash, role')
@@ -87,18 +97,33 @@ router.post('/login', async (req: Request, res: Response) => {
       .limit(1)
     
     if (error) {
-      console.error('Login query error:', error)
-      return res.status(500).json({ error: 'Internal error' })
+      console.error('❌ Login query error:', error)
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
+      return res.status(500).json({ error: 'Internal error', details: error.message })
     }
     
+    console.log(`📊 Login query returned ${users?.length || 0} users`)
+    
     if (error || !users || users.length === 0) {
+      console.log('❌ Login failed: User not found')
       return res.status(401).json({ error: 'Invalid credentials' })
     }
     
     const user = users[0]
-    const ok = await bcrypt.compare(password, user.password_hash)
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
+    console.log(`✅ User found: ${user.username} (${user.role})`)
     
+    const ok = await bcrypt.compare(password, user.password_hash)
+    if (!ok) {
+      console.log('❌ Login failed: Invalid password')
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+    
+    console.log('✅ Login successful, setting auth cookie')
     setAuthCookie(res, { userId: user.id, role: user.role })
     return res.json({
       id: user.id,
@@ -107,9 +132,13 @@ router.post('/login', async (req: Request, res: Response) => {
       email: user.email,
       role: user.role
     })
-  } catch (e) {
-    console.error('Login error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+  } catch (e: any) {
+    console.error('❌ Login exception:', e)
+    console.error('Exception details:', {
+      message: e?.message,
+      stack: e?.stack
+    })
+    return res.status(500).json({ error: 'Internal error', details: e?.message })
   }
 })
 
@@ -125,26 +154,68 @@ router.post('/logout', (_req: Request, res: Response) => {
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const auth = req.auth
+    console.log('🔍 /api/me called for userId:', auth.userId)
+    
     const isProduction = process.env.NODE_ENV === 'production'
+    console.log('🔍 Querying database for user...')
+    
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, army_number as armyNumber, username, email, role, created_at as createdAt')
+      .select('id, army_number, username, email, role, created_at')
       .eq('id', auth.userId)
       .single()
-    
-    if (error || !user) {
+
+    if (error) {
+      console.error('❌ /api/me database error:', error)
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        userId: auth.userId
+      })
       // Token refers to a missing user (probably stale) → clear it and force re-login
       res.clearCookie('token', {
         path: '/',
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
       })
-      return res.status(401).json({ error: 'Unauthorized' })
+      return res.status(401).json({ error: 'Unauthorized', details: error.message })
     }
-    res.json(user)
-  } catch (e) {
-    console.error('Me error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+
+    if (!user) {
+      console.error('❌ /api/me: User not found for userId:', auth.userId)
+      res.clearCookie('token', {
+        path: '/',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+      })
+      return res.status(401).json({ error: 'Unauthorized', details: 'User not found' })
+    }
+
+    // Transform snake_case to camelCase for frontend
+    const transformedUser = {
+      id: (user as any).id,
+      armyNumber: (user as any).army_number,
+      username: (user as any).username,
+      email: (user as any).email,
+      role: (user as any).role,
+      createdAt: (user as any).created_at
+    }
+    
+    console.log('✅ /api/me successful:', { 
+      id: transformedUser.id, 
+      username: transformedUser.username, 
+      role: transformedUser.role 
+    })
+    res.json(transformedUser)
+  } catch (e: any) {
+    console.error('❌ /api/me exception:', e)
+    console.error('Exception details:', {
+      message: e?.message,
+      stack: e?.stack
+    })
+    return res.status(500).json({ error: 'Internal error', details: e?.message })
   }
 })
 
@@ -183,11 +254,19 @@ router.get('/admin/stats', requireAuth, requireRole('ADMIN'), async (req: Authen
       .gte('created_at', thisWeek)
     
     // Get recent registrations
-    const { data: recentRegistrations } = await supabase
+    const { data: recentRegistrationsRaw } = await supabase
       .from('users')
-      .select('id, username, email, role, created_at as createdAt')
+      .select('id, username, email, role, created_at')
       .order('created_at', { ascending: false })
       .limit(10)
+    
+    const recentRegistrations = (recentRegistrationsRaw || []).map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      createdAt: u.created_at
+    }))
     
     // Generate monthly registration data for the last 12 months
     const monthlyRegistrations = []
@@ -345,16 +424,24 @@ router.put('/update-army-number', requireAuth, async (req: AuthenticatedRequest,
       return res.status(409).json({ error: 'Army number already exists' })
     }
     
-    const { data: updatedUser, error } = await supabase
+    const { data: updatedUserRaw, error } = await supabase
       .from('users')
       .update({ army_number: armyNumber })
       .eq('id', req.auth.userId)
-      .select('id, army_number as armyNumber, username, email, role')
+      .select('id, army_number, username, email, role')
       .single()
     
     if (error) {
       console.error('Update army number error:', error)
       return res.status(500).json({ error: 'Internal error' })
+    }
+    
+    const updatedUser = {
+      id: updatedUserRaw.id,
+      armyNumber: updatedUserRaw.army_number,
+      username: updatedUserRaw.username,
+      email: updatedUserRaw.email,
+      role: updatedUserRaw.role
     }
     
     res.json(updatedUser)
