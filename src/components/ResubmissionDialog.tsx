@@ -95,7 +95,7 @@ export function ResubmissionDialog({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm bg-red-50 border border-red-200 rounded p-3">{adminRemark}</p>
+              <p className="text-sm bg-destructive/10 dark:bg-destructive/20 border border-destructive/30 dark:border-destructive/50 text-destructive dark:text-destructive-foreground rounded p-3">{adminRemark}</p>
             </CardContent>
           </Card>
 

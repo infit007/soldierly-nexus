@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Home, User, GraduationCap, Users, Calendar, Stethoscope, DollarSign, Settings } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 const Index = () => {
   const menuItems = [
@@ -16,12 +17,11 @@ const Index = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 rounded-lg bg-primary/10">
-          <Home className="h-6 w-6 text-primary" />
-        </div>
+      <div className="flex items-center gap-4 mb-6">
+        <Logo size="lg" />
+        <div className="h-10 w-px bg-border"></div>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Welcome to Soldierly Nexus</h1>
+          <h1 className="text-2xl font-bold text-foreground">Welcome</h1>
           <p className="text-muted-foreground">Manage your employee information and records</p>
         </div>
       </div>

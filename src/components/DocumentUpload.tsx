@@ -124,12 +124,12 @@ export function DocumentUpload({
       <CardContent className="space-y-4">
         {existingDocument ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-green-500/10 dark:bg-green-500/20 border border-green-500/30 dark:border-green-500/50 rounded-lg">
               <div className="flex items-center gap-3">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                 <div>
-                  <div className="font-medium text-green-800">{existingDocument.name}</div>
-                  <div className="text-sm text-green-600">
+                  <div className="font-medium text-green-700 dark:text-green-300">{existingDocument.name}</div>
+                  <div className="text-sm text-green-600 dark:text-green-400">
                     {formatFileSize(existingDocument.size)} • Uploaded {new Date(existingDocument.uploadedAt).toLocaleDateString()}
                   </div>
                 </div>
@@ -140,7 +140,7 @@ export function DocumentUpload({
                   size="sm"
                   onClick={handleRemove}
                   disabled={isUploading}
-                  className="text-red-600 hover:text-red-700"
+                  className="text-destructive dark:text-destructive-foreground hover:opacity-80"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -169,19 +169,19 @@ export function DocumentUpload({
             </div>
 
             {selectedFile && (
-              <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-blue-600" />
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   <div>
-                    <div className="font-medium text-blue-800">{selectedFile.name}</div>
-                    <div className="text-sm text-blue-600">{formatFileSize(selectedFile.size)}</div>
+                    <div className="font-medium text-blue-700 dark:text-blue-300">{selectedFile.name}</div>
+                    <div className="text-sm text-blue-600 dark:text-blue-400">{formatFileSize(selectedFile.size)}</div>
                   </div>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setSelectedFile(null)}
-                  className="text-red-600 hover:text-red-700"
+                  className="text-destructive dark:text-destructive-foreground hover:opacity-80"
                 >
                   <X className="h-4 w-4" />
                 </Button>

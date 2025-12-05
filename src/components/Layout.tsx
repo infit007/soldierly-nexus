@@ -5,6 +5,8 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu, User, GraduationCap, Users, Calendar, Stethoscope, DollarSign, Settings, Home, LogOut, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Logo } from "@/components/Logo";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -31,10 +33,13 @@ const Layout = ({ children }: LayoutProps) => {
   const Sidebar = () => (
     <div className="flex flex-col h-full">
       <div className="flex h-16 items-center px-6 border-b justify-between">
-        <h1 className="text-xl font-bold">Soldierly Nexus</h1>
-        {user?.role === 'ADMIN' && (
-          <Link to="/admin-dashboard" className="text-xs text-primary flex items-center gap-1"><Shield className="h-3 w-3"/> Admin</Link>
-        )}
+        <Logo size="md" linkTo="/" />
+        <div className="flex items-center gap-2">
+          {user?.role === 'ADMIN' && (
+            <Link to="/admin-dashboard" className="text-xs text-primary flex items-center gap-1"><Shield className="h-3 w-3"/> Admin</Link>
+          )}
+          <ThemeToggle />
+        </div>
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
@@ -112,16 +117,19 @@ const Layout = ({ children }: LayoutProps) => {
 
       {!showSidebar && (
         <div className="flex h-14 items-center justify-between px-4 border-b bg-background">
-          <h1 className="text-lg font-semibold">Soldierly Nexus</h1>
-          <Link
-            to="/logout"
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Link>
+          <Logo size="sm" linkTo="/" />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link
+              to="/logout"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </Link>
+          </div>
         </div>
       )}
 

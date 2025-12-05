@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { cn } from '../lib/utils'
 import { useToast } from '../hooks/use-toast'
 import { ResubmissionDialog } from '../components/ResubmissionDialog'
+import { useAuth } from '../context/AuthContext'
+import { Logo } from '../components/Logo'
 
 // Interactive Pie Chart Component
 function PieChart({ data, size = 200, onSegmentClick }: { 
@@ -110,7 +112,9 @@ type ReqRow = {
 
 export default function ManagerDashboard() {
   const { toast } = useToast()
+  const { user: authUser } = useAuth()
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // User selection state
   const [users, setUsers] = useState<UserRow[]>([])
@@ -146,12 +150,22 @@ export default function ManagerDashboard() {
   useEffect(() => {
     const load = async () => {
       setLoadingUsers(true)
+      setError(null)
       try {
+        console.log('🔍 Loading users for manager...')
         const rows = await apiFetch<UserRow[]>('/api/manager/users')
-        setUsers(rows)
-        if (rows.length && !selectedUserId) setSelectedUserId(rows[0].id)
-      } catch (e) {
-        console.error(e)
+        console.log('✅ Users loaded:', rows.length)
+        setUsers(rows || [])
+        if (rows && rows.length && !selectedUserId) setSelectedUserId(rows[0].id)
+      } catch (e: any) {
+        console.error('❌ Failed to load users:', e)
+        const errorMessage = e?.message || 'Failed to load users'
+        setError(errorMessage)
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
       } finally {
         setLoadingUsers(false)
       }
@@ -168,11 +182,21 @@ export default function ManagerDashboard() {
 
   const reloadRequests = async () => {
     setLoadingReqs(true)
+    setError(null)
     try {
+      console.log('🔍 Loading requests for manager...')
       const res = await apiFetch<{ ok: boolean; requests: ReqRow[] }>(`/api/manager/requests`)
-      setRequests(res.requests)
-    } catch (e) {
-      console.error(e)
+      console.log('✅ Requests loaded:', res.requests?.length || 0)
+      setRequests(res.requests || [])
+    } catch (e: any) {
+      console.error('❌ Failed to load requests:', e)
+      const errorMessage = e?.message || 'Failed to load requests'
+      setError(errorMessage)
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
       setLoadingReqs(false)
     }
@@ -214,6 +238,14 @@ export default function ManagerDashboard() {
     reloadRequests()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Debug: Log auth user
+  useEffect(() => {
+    console.log('🔍 Manager Dashboard - Auth User:', authUser)
+    if (authUser && authUser.role !== 'MANAGER') {
+      console.warn('⚠️ User is not a MANAGER:', authUser.role)
+    }
+  }, [authUser])
 
 
 
@@ -453,29 +485,74 @@ export default function ManagerDashboard() {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-semibold">Manager Dashboard</h1>
+      <div className="flex items-center gap-4 mb-2">
+        <Logo size="lg" />
+        <div className="h-10 w-px bg-border"></div>
+        <div>
+          <h1 className="text-2xl font-semibold">Manager Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Manage requests and user information</p>
+        </div>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-destructive font-medium">Error loading data</p>
+                <p className="text-sm text-muted-foreground mt-1">{error}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setError(null)
+                  window.location.reload()
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Loading State */}
+      {(loadingUsers || loadingReqs) && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              <span className="text-sm text-muted-foreground">
+                {loadingUsers ? 'Loading users...' : 'Loading requests...'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rejected Requests Notification */}
       {rejectedRequests.length > 0 && (
-        <Card className="border-red-200 bg-red-50">
+        <Card className="border-destructive/50 bg-destructive/10 dark:bg-destructive/20">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-red-800">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+            <CardTitle className="flex items-center gap-2 text-destructive dark:text-destructive-foreground">
+              <div className="w-2 h-2 bg-destructive rounded-full animate-pulse"></div>
               New Rejected Requests
-              <span className="ml-auto bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm font-medium">
+              <span className="ml-auto bg-destructive/20 dark:bg-destructive/30 text-destructive dark:text-destructive-foreground px-2 py-1 rounded-full text-sm font-medium">
                 {rejectedRequests.length}
               </span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-red-700">
+              <p className="text-sm text-destructive/90 dark:text-destructive-foreground/90">
                 The following requests were rejected by admin and require your attention:
               </p>
               <Button
                 size="sm"
                 variant="outline"
-                className="text-red-700 border-red-300 hover:bg-red-100"
+                className="text-destructive border-destructive/50 hover:bg-destructive/10 dark:hover:bg-destructive/20"
                 onClick={markAllNotificationsAsSeen}
               >
                 Mark All as Seen
@@ -483,25 +560,25 @@ export default function ManagerDashboard() {
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {rejectedRequests.map((req) => (
-                <div key={req.id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-red-200">
+                <div key={req.id} className="flex items-start justify-between p-3 bg-card border border-destructive/30 dark:border-destructive/50 rounded-lg">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-red-800">{req.type}</span>
-                      <span className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded">
+                      <span className="font-medium text-destructive dark:text-destructive-foreground">{req.type}</span>
+                      <span className="text-xs text-destructive/80 dark:text-destructive-foreground/80 bg-destructive/10 dark:bg-destructive/20 px-2 py-1 rounded">
                         {new Date(req.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                    <div className="text-sm text-red-700 mb-2">
+                    <div className="text-sm text-destructive/90 dark:text-destructive-foreground/90 mb-2">
                       <strong>Admin Remark:</strong> {req.adminRemark}
                     </div>
-                    <div className="text-xs text-red-600">
+                    <div className="text-xs text-muted-foreground">
                       Request ID: {req.id}
                     </div>
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="text-red-700 border-red-300 hover:bg-red-100 ml-3 flex-shrink-0"
+                    className="text-destructive border-destructive/50 hover:bg-destructive/10 dark:hover:bg-destructive/20 ml-3 flex-shrink-0"
                     onClick={() => markNotificationAsSeen(req.id)}
                   >
                     Mark as Seen
@@ -546,8 +623,22 @@ export default function ManagerDashboard() {
             <CardTitle>Request Statistics</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center p-6">
-            <PieChart data={requestStats} size={250} onSegmentClick={handleSegmentClick} />
-            <div className="mt-4 text-center">
+            {loadingReqs ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="text-sm text-muted-foreground">Loading requests...</p>
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 text-center">
+                <p className="text-muted-foreground">No requests yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Create a leave request, outpass, or salary update to see statistics here.
+                </p>
+              </div>
+            ) : (
+              <>
+                <PieChart data={requestStats} size={250} onSegmentClick={handleSegmentClick} />
+                <div className="mt-4 text-center">
               <p className="text-sm text-muted-foreground mb-2">💡 Click on pie chart segments to see details</p>
               <div className="flex items-center justify-center gap-4 text-xs mb-3">
                 {requestStats.map((stat) => (
@@ -566,7 +657,7 @@ export default function ManagerDashboard() {
                   size="sm" 
                   variant="outline" 
                   onClick={() => handleSegmentClick('APPROVED')}
-                  className="text-green-600 border-green-300 hover:bg-green-50"
+                  className="text-green-600 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-950"
                 >
                   Test Approved
                 </Button>
@@ -574,7 +665,7 @@ export default function ManagerDashboard() {
                   size="sm" 
                   variant="outline" 
                   onClick={() => handleSegmentClick('REJECTED')}
-                  className="text-red-600 border-red-300 hover:bg-red-50"
+                  className="text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-950"
                 >
                   Test Rejected
                 </Button>
@@ -582,12 +673,14 @@ export default function ManagerDashboard() {
                   size="sm" 
                   variant="outline" 
                   onClick={() => handleSegmentClick('PENDING')}
-                  className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                  className="text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
                 >
                   Test Pending
                 </Button>
               </div>
             </div>
+              </>
+            )}
           </CardContent>
         </Card>
         
@@ -596,21 +689,35 @@ export default function ManagerDashboard() {
             <CardTitle>Request Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {loadingReqs ? (
+              <div className="flex flex-col items-center gap-2 py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="text-sm text-muted-foreground">Loading requests...</p>
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <p className="text-muted-foreground">No requests yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Create a leave request, outpass, or salary update to see summary here.
+                </p>
+              </div>
+            ) : (
+              <>
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                   {requestStats.find(s => s.label === 'Approved')?.value || 0}
                 </div>
                 <div className="text-sm text-muted-foreground">Approved</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                   {requestStats.find(s => s.label === 'Rejected')?.value || 0}
                 </div>
                 <div className="text-sm text-muted-foreground">Rejected</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-amber-600">
+                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
                   {requestStats.find(s => s.label === 'Pending')?.value || 0}
                 </div>
                 <div className="text-sm text-muted-foreground">Pending</div>
@@ -624,6 +731,8 @@ export default function ManagerDashboard() {
                 <div className="text-sm text-muted-foreground">Total Requests</div>
               </div>
             </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -874,7 +983,7 @@ export default function ManagerDashboard() {
               {requests && requests.map(r => (
                 <div key={r.id} className={`text-sm border rounded p-3 space-y-3 ${
                   r.status === 'REJECTED' && r.adminRemark && !seenNotifications.has(r.id) 
-                    ? 'border-red-300 bg-red-50' 
+                    ? 'border-destructive/50 bg-destructive/10 dark:bg-destructive/20' 
                     : ''
                 }`}>
                   <div className="flex items-center justify-between">
@@ -882,7 +991,7 @@ export default function ManagerDashboard() {
                       <div className="font-medium flex items-center gap-2">
                         {r.type} · {r.status}
                         {r.status === 'REJECTED' && r.adminRemark && !seenNotifications.has(r.id) && (
-                          <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                          <span className="text-xs bg-destructive/20 dark:bg-destructive/30 text-destructive dark:text-destructive-foreground px-2 py-1 rounded-full">
                             New
                           </span>
                         )}
@@ -892,16 +1001,16 @@ export default function ManagerDashboard() {
                   </div>
                   
                   {r.status === 'REJECTED' && r.adminRemark && (
-                    <div className="bg-red-50 border border-red-200 rounded p-3">
-                      <div className="font-medium text-red-800 mb-1">Admin Remark:</div>
-                      <div className="text-red-700">{r.adminRemark}</div>
+                    <div className="bg-destructive/10 dark:bg-destructive/20 border border-destructive/30 dark:border-destructive/50 rounded p-3">
+                      <div className="font-medium text-destructive dark:text-destructive-foreground mb-1">Admin Remark:</div>
+                      <div className="text-destructive/90 dark:text-destructive-foreground/90">{r.adminRemark}</div>
                     </div>
                   )}
                   
                   {r.status === 'PENDING' && r.managerResponse && (
-                    <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                      <div className="font-medium text-blue-800 mb-1">Your Response:</div>
-                      <div className="text-blue-700">{r.managerResponse}</div>
+                    <div className="bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/50 rounded p-3">
+                      <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Your Response:</div>
+                      <div className="text-blue-700 dark:text-blue-300">{r.managerResponse}</div>
                     </div>
                   )}
                   
@@ -966,15 +1075,15 @@ export default function ManagerDashboard() {
                 </CardHeader>
                 <CardContent>
                   {req.adminRemark && (
-                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded">
-                      <div className="font-medium text-red-800 mb-1">Admin Remark:</div>
-                      <div className="text-red-700">{req.adminRemark}</div>
+                    <div className="mb-3 p-3 bg-destructive/10 dark:bg-destructive/20 border border-destructive/30 dark:border-destructive/50 rounded">
+                      <div className="font-medium text-destructive dark:text-destructive-foreground mb-1">Admin Remark:</div>
+                      <div className="text-destructive/90 dark:text-destructive-foreground/90">{req.adminRemark}</div>
                     </div>
                   )}
                   {req.managerResponse && (
-                    <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
-                      <div className="font-medium text-blue-800 mb-1">Manager Response:</div>
-                      <div className="text-blue-700">{req.managerResponse}</div>
+                    <div className="mb-3 p-3 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/50 rounded">
+                      <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Manager Response:</div>
+                      <div className="text-blue-700 dark:text-blue-300">{req.managerResponse}</div>
                     </div>
                   )}
                   <div className="text-xs bg-muted p-3 rounded font-mono overflow-auto">

@@ -10,6 +10,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate, Link } from 'react-router-dom'
 import { UserPlus, Loader2, AlertCircle } from 'lucide-react'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { Logo } from '@/components/Logo'
 
 const schema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -48,8 +50,15 @@ export default function Signup() {
   }
 
   return (
-    <div className="max-w-md mx-auto">
-      <Card className="shadow-soft">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <div className="max-w-md w-full space-y-6">
+        <div className="flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <Card className="shadow-soft">
         <CardHeader>
           <CardTitle>Sign up</CardTitle>
           <CardDescription>Create a user account</CardDescription>
@@ -125,6 +134,7 @@ export default function Signup() {
           </Form>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

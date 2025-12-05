@@ -30,6 +30,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/hooks/use-toast'
 import { RejectionDialog } from '@/components/RejectionDialog'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { Logo } from '@/components/Logo'
 
 // Lightweight charts (no external deps)
 function DonutChart({ segments, size = 140, thickness = 22, centerLabel, onSegmentClick }: {
@@ -234,20 +236,20 @@ function RequestSummary({ r }: { r: AdminRequestRow }) {
   return (
     <div className="space-y-2">
       {r.targetUser && (
-        <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border">
+        <div className="text-xs bg-blue-500/10 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-1 rounded border border-blue-500/30 dark:border-blue-500/50">
           <strong>Request for:</strong> {r.targetUser.username} 
           {r.targetUser.armyNumber && ` • Army Number: ${r.targetUser.armyNumber}`}
         </div>
       )}
       
       {r.status === 'REJECTED' && r.adminRemark && (
-        <div className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded border">
+        <div className="text-xs bg-destructive/10 dark:bg-destructive/20 text-destructive dark:text-destructive-foreground px-2 py-1 rounded border border-destructive/30 dark:border-destructive/50">
           <strong>Admin Remark:</strong> {r.adminRemark}
         </div>
       )}
       
       {r.status === 'PENDING' && r.managerResponse && (
-        <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border">
+        <div className="text-xs bg-blue-500/10 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-1 rounded border border-blue-500/30 dark:border-blue-500/50">
           <strong>Manager Response:</strong> {r.managerResponse}
         </div>
       )}
@@ -574,11 +576,11 @@ export default function AdminDashboard() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <div className="text-lg">Loading admin dashboard...</div>
           {error && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <div className="text-red-600 text-sm">{error}</div>
+            <div className="mt-4 p-3 bg-destructive/10 dark:bg-destructive/20 border border-destructive/30 dark:border-destructive/50 rounded-lg">
+              <div className="text-destructive dark:text-destructive-foreground text-sm">{error}</div>
               <button 
                 onClick={() => window.location.reload()} 
-                className="mt-2 text-red-600 hover:text-red-800 underline text-sm"
+                className="mt-2 text-destructive dark:text-destructive-foreground hover:opacity-80 underline text-sm"
               >
                 Click here to retry
               </button>
@@ -592,7 +594,7 @@ export default function AdminDashboard() {
   if (!stats) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-red-600">Failed to load dashboard data</div>
+        <div className="text-lg text-destructive dark:text-destructive-foreground">Failed to load dashboard data</div>
       </div>
     )
   }
@@ -603,16 +605,16 @@ export default function AdminDashboard() {
         <div className="space-y-6">
           {/* Header with Logout Button */}
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Shield className="h-6 w-6 text-primary" />
-              </div>
+            <div className="flex items-center gap-4">
+              <Logo size="lg" />
+              <div className="h-8 w-px bg-border"></div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
                 <p className="text-muted-foreground">System overview and user analytics</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <Button 
                 onClick={async () => {
                   setRefreshing(true)
@@ -656,37 +658,37 @@ export default function AdminDashboard() {
               req.status === 'PENDING' && req.adminRemark && req.managerResponse
             )
             return resubmittedRequests.length > 0 ? (
-              <Card className="border-blue-200 bg-blue-50">
+              <Card className="border-blue-500/30 dark:border-blue-500/50 bg-blue-500/10 dark:bg-blue-500/20">
                 <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-blue-800">
+                  <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                     Resubmitted Requests Pending Review
-                    <span className="ml-auto bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
+                    <span className="ml-auto bg-blue-500/20 dark:bg-blue-500/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full text-sm font-medium">
                       {resubmittedRequests.length}
                     </span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-sm text-blue-700">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
                     The following requests were resubmitted by managers with responses to your remarks:
                   </p>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {resubmittedRequests.map((req) => (
-                      <div key={req.id} className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
+                      <div key={req.id} className="flex items-start justify-between p-3 bg-card border border-blue-500/30 dark:border-blue-500/50 rounded-lg">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-blue-800">{req.type}</span>
-                            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                            <span className="font-medium text-blue-600 dark:text-blue-400">{req.type}</span>
+                            <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-500/20 dark:bg-blue-500/30 px-2 py-1 rounded">
                               {new Date(req.createdAt).toLocaleDateString()}
                             </span>
                           </div>
-                          <div className="text-sm text-blue-700 mb-2">
+                          <div className="text-sm text-blue-700 dark:text-blue-300 mb-2">
                             <strong>Your Remark:</strong> {req.adminRemark}
                           </div>
-                          <div className="text-sm text-blue-700 mb-2">
+                          <div className="text-sm text-blue-700 dark:text-blue-300 mb-2">
                             <strong>Manager Response:</strong> {req.managerResponse}
                           </div>
-                          <div className="text-xs text-blue-600">
+                          <div className="text-xs text-muted-foreground">
                             Request ID: {req.id}
                           </div>
                         </div>
@@ -694,7 +696,7 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="text-green-700 border-green-300 hover:bg-green-100"
+                            className="text-green-600 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-950"
                             onClick={() => handleApprove(req.id)}
                             disabled={refreshing}
                           >
@@ -703,7 +705,7 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="text-red-700 border-red-300 hover:bg-red-100"
+                            className="text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-950"
                             onClick={() => setRejectionDialog({ open: true, requestId: req.id })}
                             disabled={refreshing}
                           >
@@ -730,9 +732,9 @@ export default function AdminDashboard() {
 
             <TabsContent value="overview" className="space-y-4">
               {refreshing && (
-                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                  <span className="text-blue-600 text-sm">Refreshing data...</span>
+                <div className="flex items-center justify-center p-4 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/50 rounded-lg">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 dark:border-blue-400 mr-2"></div>
+                  <span className="text-blue-600 dark:text-blue-400 text-sm">Refreshing data...</span>
                 </div>
               )}
               
@@ -854,9 +856,9 @@ export default function AdminDashboard() {
             {/* Requests Tab */}
             <TabsContent value="requests" className="space-y-4">
               {refreshing && (
-                <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                  <span className="text-blue-600 text-sm">Refreshing data...</span>
+                <div className="flex items-center justify-center p-4 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/50 rounded-lg mb-4">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 dark:border-blue-400 mr-2"></div>
+                  <span className="text-blue-600 dark:text-blue-400 text-sm">Refreshing data...</span>
                 </div>
               )}
               
@@ -1014,10 +1016,7 @@ export default function AdminDashboard() {
                           {selectedUser.profile.education && (
                             <Card>
                               <CardHeader className="pb-3">
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                  <GraduationCap className="h-4 w-4" />
-                                  Education Details
-                                </CardTitle>
+                                
                               </CardHeader>
                               <CardContent className="space-y-2 text-sm">
                                 {Object.entries(selectedUser.profile.education).map(([key, value]) => (

@@ -10,6 +10,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Loader2, LogIn, AlertCircle } from 'lucide-react'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { Logo } from '@/components/Logo'
 
 const schema = z.object({
   usernameOrEmail: z.string().min(1, 'Required'),
@@ -52,8 +54,15 @@ export default function Login() {
   }
 
   return (
-    <div className="max-w-md mx-auto">
-      <Card className="shadow-soft">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <div className="max-w-md w-full space-y-6">
+        <div className="flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <Card className="shadow-soft">
         <CardHeader>
           <CardTitle>Login</CardTitle>
           <CardDescription>Enter your credentials to continue</CardDescription>
@@ -115,6 +124,7 @@ export default function Login() {
           </Form>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

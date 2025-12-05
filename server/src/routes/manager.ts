@@ -184,38 +184,110 @@ router.post('/manager/requests/profile-edit', requireAuth, requireRole('MANAGER'
   }
 })
 
-// Manager: list own requests
+// Manager: list all requests (managers can see all requests in the system)
 router.get('/manager/requests', requireAuth, requireRole('MANAGER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const requesterId = req.auth.userId
+    const managerId = req.auth.userId
+    console.log('🔍 /api/manager/requests called by manager userId:', managerId)
+    
     const status = req.query.status && String(req.query.status).toUpperCase()
-    const where = { requesterId, ...(status ? { status } : {}) }
+    const type = req.query.type && String(req.query.type).toUpperCase()
+    
+    // Get all requests (not filtered by requester_id - managers see all requests)
     let query = supabase
       .from('requests')
-      .select('id, type, status, data, admin_remark, manager_response, created_at, updated_at')
-      .eq('requester_id', requesterId)
+      .select(`
+        id,
+        type,
+        status,
+        data,
+        admin_remark,
+        manager_response,
+        created_at,
+        updated_at,
+        requester_id,
+        users!requests_requester_id_fkey (
+          id,
+          username,
+          email,
+          role
+        )
+      `)
       .order('created_at', { ascending: false })
     
     if (status) query = query.eq('status', status)
+    if (type) query = query.eq('type', type)
     
-    const { data: requestsRaw } = await query
+    const { data: requestsRaw, error } = await query
     
-    // Transform snake_case to camelCase
-    const requests = (requestsRaw || []).map((r: any) => ({
-      id: r.id,
-      type: r.type,
-      status: r.status,
-      data: r.data,
-      adminRemark: r.admin_remark,
-      managerResponse: r.manager_response,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at
+    if (error) {
+      console.error('❌ /api/manager/requests database error:', error)
+      return res.status(500).json({ error: 'Internal error', details: error.message })
+    }
+    
+    console.log(`✅ /api/manager/requests found ${requestsRaw?.length || 0} total requests`)
+    
+    // Collect all unique target user IDs from request data
+    const userIds = [...new Set((requestsRaw || []).map((r: any) => {
+      const requestData = r.data as any
+      if (requestData && typeof requestData === 'object' && typeof requestData.userId === 'string') {
+        return requestData.userId
+      }
+      return null
+    }).filter(Boolean))]
+    
+    // Fetch all target users in one query
+    const { data: targetUsersRaw } = userIds.length > 0 ? await supabase
+      .from('users')
+      .select('id, username, email, army_number, role')
+      .in('id', userIds) : { data: [] }
+    
+    // Transform snake_case to camelCase for target users
+    const targetUsers = (targetUsersRaw || []).map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      armyNumber: u.army_number,
+      role: u.role
     }))
     
+    // Create a map for quick lookup
+    const userMap = new Map(targetUsers.map((u: any) => [u.id, u]))
+    
+    // Transform snake_case to camelCase and add requester/target user info
+    const requests = (requestsRaw || []).map((r: any) => {
+      const requestData = r.data as any
+      let targetUser = null
+      
+      // Extract target user from request data
+      if (requestData && typeof requestData === 'object' && typeof requestData.userId === 'string') {
+        targetUser = userMap.get(requestData.userId) || null
+      }
+      
+      return {
+        id: r.id,
+        type: r.type,
+        status: r.status,
+        data: r.data,
+        adminRemark: r.admin_remark,
+        managerResponse: r.manager_response,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        requesterId: r.requester_id,
+        requester: r.users ? {
+          id: r.users.id,
+          username: r.users.username,
+          email: r.users.email,
+          role: r.users.role
+        } : null,
+        targetUser: targetUser
+      }
+    })
+    
     return res.json({ ok: true, requests })
-  } catch (e) {
-    console.error('List manager requests error:', e)
-    return res.status(500).json({ error: 'Internal error' })
+  } catch (e: any) {
+    console.error('❌ /api/manager/requests exception:', e)
+    return res.status(500).json({ error: 'Internal error', details: e?.message })
   }
 })
 
