@@ -1024,8 +1024,8 @@ export default function AdminDashboard() {
                                     <span className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
                                     <span className="text-muted-foreground">{String(value) || 'Not specified'}</span>
                                   </div>
-                                ))}
-                              </CardContent>
+                                ))}                              
+             </CardContent>
                             </Card>
                           )}
 
